@@ -210,4 +210,21 @@ describe('HeartRateMonitor', () => {
     expect(hrm.snapshot.bodySensorLocation).toBe('chest');
     expect(hrm.snapshot.rrIntervalsMs?.length).toBe(1);
   });
+
+  it('retries connect and discovery when the link drops during setup', async () => {
+    const { trainer, sim, states } = create({}, { latencyMs: 5 });
+    let first = true;
+    sim.peripheral.onConnected(() => {
+      if (!first) return;
+      first = false;
+      setTimeout(() => sim.peripheral.simulateConnectionLoss(), 12); // in the middle of discovery
+    });
+    const errors: string[] = [];
+    trainer.on('error', (e) => errors.push(e.message));
+    await trainer.connect();
+    expect(trainer.connectionState).toBe('ready');
+    expect(states.slice(0, 4)).toEqual(['connecting', 'discovering', 'connecting', 'discovering']);
+    expect(errors.some((m) => m.includes('retrying'))).toBe(true);
+    await expect.poll(() => trainer.control).toBe('granted');
+  });
 });

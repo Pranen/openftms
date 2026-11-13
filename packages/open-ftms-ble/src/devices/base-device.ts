@@ -319,13 +319,31 @@ export abstract class BaseDevice<E extends BaseDeviceEvents> extends TypedEmitte
     if (!peripheral) throw new ConnectionError('No peripheral selected');
     this.#establishing = true;
     try {
-      this.#setState(context.isReconnect ? 'reconnecting' : 'connecting');
-      await this.#connectWithRetry(peripheral);
-      this.#setState('discovering');
-      this.gatt.reset();
-      await this.setup(peripheral, context);
-      if (this.#userDisconnect) throw new ConnectionError('Disconnected by user');
-      if (!peripheral.connected) throw new ConnectionError('Connection lost during setup');
+      for (let attempt = 0; ; attempt++) {
+        this.#setState(context.isReconnect ? 'reconnecting' : 'connecting');
+        await this.#connectWithRetry(peripheral);
+        this.#setState('discovering');
+        this.gatt.reset();
+        try {
+          await this.setup(peripheral, context);
+          if (this.#userDisconnect) throw new ConnectionError('Disconnected by user');
+          if (!peripheral.connected) throw new ConnectionError('Connection lost during setup');
+          break;
+        } catch (error) {
+          // The link often drops right after connecting (Windows, or another tab
+          // releasing the device). Retry connect + discovery as one unit.
+          const linkLost = !peripheral.connected || isRetryable(error);
+          if (this.#userDisconnect || !linkLost || attempt >= this.#connectRetries) throw error;
+          this.#endSession(wrapError(ConnectionError, 'Connection lost during discovery', error));
+          this.reportError(error, `Connection lost during discovery, retrying (${attempt + 1}/${this.#connectRetries})`);
+          try {
+            peripheral.disconnect();
+          } catch {
+            // ignore
+          }
+          await delay(this.#connectRetryDelayMs);
+        }
+      }
     } finally {
       this.#establishing = false;
     }
