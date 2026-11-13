@@ -110,6 +110,21 @@ describe('GattQueue', () => {
     await expect(q.run('slow', () => delay(50), 10)).rejects.toBeInstanceOf(TimeoutError);
   });
 
+  it('reports the timing of every settled operation', async () => {
+    const traces: Array<{ label: string; error?: string }> = [];
+    const q = new GattQueue((t) => traces.push(t));
+    await q.run('ok', async () => 1);
+    await expect(
+      q.run('bad', async () => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    await delay(0);
+    expect(traces.map((t) => t.label)).toEqual(['ok', 'bad']);
+    expect(traces[0]?.error).toBeUndefined();
+    expect(traces[1]?.error).toBe('Error: boom');
+  });
+
   it('cancels queued operations on reset', async () => {
     const q = new GattQueue();
     const first = q.run('first', () => delay(20).then(() => 1));
@@ -140,5 +155,40 @@ describe('WebBluetoothTransport', () => {
     } as unknown as Bluetooth;
     const t = new WebBluetoothTransport(fake);
     await expect(t.requestDevice({ filters: [{ services: [0x1826] }] })).rejects.toBeInstanceOf(UserCancelledError);
+  });
+
+  it('discovers all characteristics of a service in one round trip', async () => {
+    const calls = { all: 0, single: 0 };
+    const char = (short: number) => ({
+      uuid: `0000${short.toString(16).padStart(4, '0')}-0000-1000-8000-00805f9b34fb`,
+      properties: { read: true, write: false, writeWithoutResponse: false, notify: true, indicate: false },
+    });
+    const service = {
+      uuid: '00001826-0000-1000-8000-00805f9b34fb',
+      getCharacteristics: async () => {
+        calls.all++;
+        return [char(0x2acc), char(0x2ad2)];
+      },
+      getCharacteristic: async () => {
+        calls.single++;
+        throw new DOMException('not found', 'NotFoundError');
+      },
+    };
+    const server = { connected: true, getPrimaryService: async () => service };
+    const device = {
+      id: 'flux',
+      name: 'Tacx Flux 2',
+      gatt: { connected: true, connect: async () => server, disconnect: () => undefined },
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    };
+    const fake = { getAvailability: async () => true, requestDevice: async () => device } as unknown as Bluetooth;
+    const peripheral = await new WebBluetoothTransport(fake).requestDevice({ filters: [] });
+    await peripheral.connect();
+    const ftms = await peripheral.getService(0x1826);
+    expect(await ftms?.getCharacteristic(0x2acc)).toBeDefined();
+    expect(await ftms?.getCharacteristic('00002ad2-0000-1000-8000-00805f9b34fb')).toBeDefined();
+    expect(await ftms?.getCharacteristic(0x2ad6)).toBeUndefined();
+    expect(calls).toEqual({ all: 1, single: 0 });
   });
 });

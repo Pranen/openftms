@@ -8,6 +8,10 @@ export interface ReportContext {
   hrm: HeartRateMonitor;
   log: PacketLog;
   events: readonly string[];
+  /** Last snapshot of every device seen in this page session (survives disconnects). */
+  knownDevices: Record<string, unknown>;
+  /** Timing of GATT operations (lookups, reads, writes, subscribes). */
+  gattTraces: readonly string[];
 }
 
 function replacer(_key: string, value: unknown): unknown {
@@ -30,6 +34,7 @@ export function buildReport(ctx: ReportContext, maxPackets = 400): string {
     source: ctx.source,
     trainer: { name: trainer.deviceName, ...trainer.snapshot },
     heartRateMonitor: { name: hrm.deviceName, ...hrm.snapshot },
+    knownDevices: ctx.knownDevices,
   };
   const packets = ctx.log.packets
     .slice(-maxPackets)
@@ -44,6 +49,9 @@ export function buildReport(ctx: ReportContext, maxPackets = 400): string {
     '',
     `## Ereignisse (${ctx.events.length})`,
     ...ctx.events,
+    '',
+    `## GATT-Operationen (letzte ${ctx.gattTraces.length})`,
+    ...ctx.gattTraces,
     '',
     `## Pakete (letzte ${packets.length} von ${ctx.log.packets.length})`,
     ...packets,

@@ -121,8 +121,21 @@ class WebBluetoothPeripheral implements BlePeripheral {
 class WebBluetoothService implements BleService {
   readonly #service: BluetoothRemoteGATTService;
 
+  #all: Promise<Map<string, BluetoothRemoteGATTCharacteristic> | undefined> | undefined;
+
   constructor(service: BluetoothRemoteGATTService) {
     this.#service = service;
+  }
+
+  /** All characteristics by UUID, or `undefined` to fall back to single lookups. */
+  async #discoverAll(): Promise<Map<string, BluetoothRemoteGATTCharacteristic> | undefined> {
+    try {
+      const list = await this.#service.getCharacteristics();
+      return new Map(list.map((c) => [normalizeUuid(c.uuid), c]));
+    } catch (error) {
+      if (isDomError(error, 'NotFoundError')) return new Map(); // service has no characteristics
+      return undefined;
+    }
   }
 
   get uuid(): string {
@@ -130,6 +143,13 @@ class WebBluetoothService implements BleService {
   }
 
   async getCharacteristic(uuid: BleUuid): Promise<BleCharacteristic | undefined> {
+    // One discovery round trip per service instead of one per lookup; on some
+    // platforms (Windows) every single lookup is noticeably slow.
+    const all = await (this.#all ??= this.#discoverAll());
+    if (all) {
+      const characteristic = all.get(normalizeUuid(uuid));
+      return characteristic ? new WebBluetoothCharacteristic(characteristic) : undefined;
+    }
     try {
       return new WebBluetoothCharacteristic(await this.#service.getCharacteristic(uuid));
     } catch (error) {

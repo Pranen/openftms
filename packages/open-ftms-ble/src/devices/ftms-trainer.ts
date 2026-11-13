@@ -312,7 +312,12 @@ export class FtmsTrainer extends BaseDevice<FtmsTrainerEvents> {
     const ftms = await this.getService(peripheral, SERVICE.fitnessMachine);
     if (!ftms) throw new ConnectionError('Device does not offer the Fitness Machine Service (0x1826)');
 
-    const get = (uuid: number) => this.getCharacteristic(ftms, uuid);
+    const lookups = new Map<number, Promise<BleCharacteristic | undefined>>();
+    const get = (uuid: number): Promise<BleCharacteristic | undefined> => {
+      let lookup = lookups.get(uuid);
+      if (!lookup) lookups.set(uuid, (lookup = this.getCharacteristic(ftms, uuid)));
+      return lookup;
+    };
     const bikeData = await get(CHARACTERISTIC.indoorBikeData);
     const controlPoint = await get(CHARACTERISTIC.fitnessMachineControlPoint);
     const machineStatus = await get(CHARACTERISTIC.fitnessMachineStatus);

@@ -42,7 +42,8 @@ target is restored after a reconnect. Slider bursts are coalesced ("latest wins"
 `npm run dev`, then open http://localhost:5173 in Chrome/Edge. Switch the source
 to **Simulator** to try everything without hardware (incl. link loss, control
 loss and "another app holds control"). **Bericht kopieren/herunterladen** creates
-a text report with device info, capabilities, events and the last packets.
+a text report with device info and capabilities of every device seen (kept after
+disconnecting), events, GATT operation timings and the last packets.
 
 ## Development
 

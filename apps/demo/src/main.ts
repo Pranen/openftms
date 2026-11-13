@@ -17,6 +17,7 @@ import {
   type ConnectionState,
   type ControlState,
   type FtmsCapabilities,
+  type GattOperationTrace,
   type IndoorBikeData,
   type MachineStatus,
   type SupportedRange,
@@ -45,6 +46,10 @@ const log = new PacketLog($<HTMLTableSectionElement>('log-body'), $('log-meta'))
 const events: string[] = [];
 let lastBikeData: IndoorBikeData | undefined;
 let machineStatuses: Array<{ at: number; status: MachineStatus }> = [];
+/** Timing of every GATT operation, for the report. */
+const gattTraces: string[] = [];
+/** Last known snapshot per device, kept across disconnects and source switches. */
+const knownDevices = new Map<string, unknown>();
 // Assigned at the bottom, once `render` and all handlers exist.
 let session: Session;
 
@@ -70,9 +75,38 @@ function createSession(source: Source): Session {
   return s;
 }
 
-function bind({ trainer, hrm }: Session): void {
+function bind({ source, trainer, hrm }: Session): void {
+  const remember = (label: string, device: FtmsTrainer | HeartRateMonitor) =>
+    knownDevices.set(`${label} (${source}, ${device.deviceName ?? '?'})`, {
+      name: device.deviceName,
+      seenAt: new Date().toISOString(),
+      ...device.snapshot,
+    });
+  const traceGatt = (label: string) => (t: GattOperationTrace) => {
+    gattTraces.push(
+      `${timeOfDay(t.startedAt)} ${label.padEnd(8)} ${t.label.padEnd(44)} ${String(t.durationMs).padStart(5)} ms${t.error ? `  ${t.error}` : ''}`,
+    );
+    if (gattTraces.length > 400) gattTraces.shift();
+  };
+  const timeToReady = (label: string) => {
+    let startedAt = 0;
+    return (state: ConnectionState) => {
+      if (state === 'connecting' || state === 'reconnecting') startedAt = Date.now();
+      if (state === 'ready' && startedAt) {
+        addEvent(`${label}: bereit nach ${((Date.now() - startedAt) / 1000).toFixed(1)} s`);
+        startedAt = 0;
+      }
+    };
+  };
+  const trainerReady = timeToReady('Trainer');
+  const hrmReady = timeToReady('Pulsgurt');
+
+  trainer.on('gattOperation', traceGatt('Trainer'));
+  hrm.on('gattOperation', traceGatt('Pulsgurt'));
   trainer.on('connectionStateChange', (e) => {
     addEvent(`Trainer: ${e.previous} → ${e.state}${e.error ? ` (${e.error.message})` : ''}`);
+    trainerReady(e.state);
+    if (e.state === 'ready') remember('Trainer', trainer);
     render();
   });
   trainer.on('reconnectScheduled', (e) =>
@@ -94,10 +128,15 @@ function bind({ trainer, hrm }: Session): void {
   });
   trainer.on('trainingStatus', render);
   trainer.on('modeChange', render);
-  trainer.on('capabilities', (c) => renderCapabilities(c));
+  trainer.on('capabilities', (c) => {
+    renderCapabilities(c);
+    remember('Trainer', trainer);
+  });
 
   hrm.on('connectionStateChange', (e) => {
     addEvent(`Pulsgurt: ${e.previous} → ${e.state}${e.error ? ` (${e.error.message})` : ''}`);
+    hrmReady(e.state);
+    if (e.state === 'ready') remember('Pulsgurt', hrm);
     render();
   });
   hrm.on('reconnectScheduled', (e) =>
@@ -326,7 +365,15 @@ $<HTMLInputElement>('log-hide-stream').addEventListener('change', (e) => {
 $('log-clear').addEventListener('click', () => log.clear());
 
 function report(): string {
-  return buildReport({ source: session.source, trainer: session.trainer, hrm: session.hrm, log, events });
+  return buildReport({
+    source: session.source,
+    trainer: session.trainer,
+    hrm: session.hrm,
+    log,
+    events,
+    knownDevices: Object.fromEntries(knownDevices),
+    gattTraces,
+  });
 }
 
 $('report-copy').addEventListener('click', async () => {
@@ -357,7 +404,11 @@ async function updateEnvStatus(): Promise<void> {
   $('connection-hint').hidden = session.source === 'sim';
 }
 
-session = createSession('ble');
+// The browser may restore the radio selection on reload; start with whatever is checked.
+const initialSource =
+  document.querySelector<HTMLInputElement>('#source-select input:checked')?.value === 'sim' ? 'sim' : 'ble';
+session = createSession(initialSource);
+$('sim-panel').hidden = session.source !== 'sim';
 // Re-render once a second so ages/rates stay current without new packets.
 setInterval(render, 1000);
 void updateEnvStatus();

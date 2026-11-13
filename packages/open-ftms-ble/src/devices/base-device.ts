@@ -9,7 +9,7 @@ import {
 import { TypedEmitter, type Unsubscribe } from '../events/typed-emitter';
 import { toBytes, toHex } from '../protocol/bytes';
 import { uuidName } from '../protocol/uuids';
-import { GattQueue } from '../transport/gatt-queue';
+import { GattQueue, type GattOperationTrace } from '../transport/gatt-queue';
 import type { BleCharacteristic, BlePeripheral, BleService, BleTransport, BleUuid, DeviceRequest } from '../transport/transport';
 import { WebBluetoothTransport } from '../transport/web-bluetooth';
 import { delay, withTimeout } from '../util/async';
@@ -68,11 +68,17 @@ export interface BaseDeviceEvents {
   raw: RawPacket;
   /** Errors without a caller to reject (reconnect, notification handling …). */
   error: OpenFtmsError;
+  /** Timing of every GATT operation (lookup, read, write, subscribe), for diagnostics. */
+  gattOperation: GattOperationTrace;
 }
 
 interface SessionContext {
   /** True when this session re-establishes a lost connection. */
   readonly isReconnect: boolean;
+}
+
+function uuidLabel(uuid: BleUuid): string {
+  return uuidName(uuid) ?? (typeof uuid === 'number' ? `0x${uuid.toString(16).padStart(4, '0')}` : uuid);
 }
 
 function isRetryable(error: unknown): boolean {
@@ -90,7 +96,7 @@ function isRetryable(error: unknown): boolean {
  */
 export abstract class BaseDevice<E extends BaseDeviceEvents> extends TypedEmitter<E> {
   protected readonly transport: BleTransport;
-  protected readonly gatt = new GattQueue();
+  protected readonly gatt = new GattQueue((trace) => this.emitBase('gattOperation', trace));
   readonly #connectTimeoutMs: number;
   readonly #connectRetries: number;
   readonly #connectRetryDelayMs: number;
@@ -212,7 +218,7 @@ export abstract class BaseDevice<E extends BaseDeviceEvents> extends TypedEmitte
   }
 
   protected async getService(peripheral: BlePeripheral, uuid: BleUuid): Promise<BleService | undefined> {
-    return this.gatt.run(`getService ${String(uuid)}`, () => peripheral.getService(uuid), this.operationTimeoutMs);
+    return this.gatt.run(`getService ${uuidLabel(uuid)}`, () => peripheral.getService(uuid), this.operationTimeoutMs);
   }
 
   protected async getCharacteristic(
@@ -221,7 +227,7 @@ export abstract class BaseDevice<E extends BaseDeviceEvents> extends TypedEmitte
   ): Promise<BleCharacteristic | undefined> {
     if (!service) return undefined;
     return this.gatt.run(
-      `getCharacteristic ${String(uuid)}`,
+      `getCharacteristic ${uuidLabel(uuid)}`,
       () => service.getCharacteristic(uuid),
       this.operationTimeoutMs,
     );
