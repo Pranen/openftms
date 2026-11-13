@@ -9,7 +9,10 @@
  */
 
 export * from './errors';
+export * from './events/typed-emitter';
 export * from './protocol';
+export * from './transport';
+export { delay, withTimeout } from './util/async';
 
 export const LIBRARY_NAME = 'open-ftms-ble';
 export const LIBRARY_VERSION = '0.0.0';

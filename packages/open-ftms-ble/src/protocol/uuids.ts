@@ -39,6 +39,13 @@ export function toFullUuid(shortUuid: number): string {
   return `0000${shortUuid.toString(16).padStart(4, '0')}-0000-1000-8000-00805f9b34fb`;
 }
 
+/** Normalises a 16-bit number or a UUID string to the lowercase 128-bit form. */
+export function normalizeUuid(uuid: number | string): string {
+  if (typeof uuid === 'number') return toFullUuid(uuid);
+  const lower = uuid.toLowerCase();
+  return /^[0-9a-f]{4}$/.test(lower) ? toFullUuid(Number.parseInt(lower, 16)) : lower;
+}
+
 const NAMES = new Map<string, string>(
   [...Object.entries(SERVICE), ...Object.entries(CHARACTERISTIC)].map(([name, short]) => [
     toFullUuid(short),
@@ -48,6 +55,5 @@ const NAMES = new Map<string, string>(
 
 /** Human-readable name for a known service/characteristic UUID (16-bit or 128-bit). */
 export function uuidName(uuid: number | string): string | undefined {
-  const full = typeof uuid === 'number' ? toFullUuid(uuid) : uuid.toLowerCase();
-  return NAMES.get(full);
+  return NAMES.get(normalizeUuid(uuid));
 }
