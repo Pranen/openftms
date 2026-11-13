@@ -12,6 +12,8 @@ export * from './errors';
 export * from './events/typed-emitter';
 export * from './protocol';
 export * from './transport';
+export * from './devices';
+export * from './simulator';
 export { delay, withTimeout } from './util/async';
 
 export const LIBRARY_NAME = 'open-ftms-ble';
