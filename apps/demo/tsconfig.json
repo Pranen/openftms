@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vite/client", "web-bluetooth"],
+    "noEmit": true,
+    "paths": {
+      "open-ftms-ble": ["../../packages/open-ftms-ble/src/index.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

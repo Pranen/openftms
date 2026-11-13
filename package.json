@@ -1,0 +1,19 @@
+{
+  "name": "open-ftms",
+  "private": true,
+  "description": "Monorepo: open-ftms-ble library (Web Bluetooth FTMS/HRS) and demo harness",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm run dev -w demo",
+    "build": "npm run build -w open-ftms-ble && npm run build -w demo",
+    "test": "npm run test -w open-ftms-ble",
+    "typecheck": "npm run typecheck --workspaces"
+  }
+}
