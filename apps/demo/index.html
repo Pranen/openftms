@@ -8,18 +8,110 @@
   <body>
     <header class="topbar">
       <h1>open-ftms-ble <span class="muted">Test-Harness</span></h1>
-      <div id="env-status" class="badge">…</div>
+      <div class="topbar-right">
+        <fieldset class="segmented" id="source-select" aria-label="Datenquelle">
+          <label><input type="radio" name="source" value="ble" checked /> Bluetooth</label>
+          <label><input type="radio" name="source" value="sim" /> Simulator</label>
+        </fieldset>
+        <div id="env-status" class="badge">…</div>
+      </div>
     </header>
 
     <main class="columns">
+      <!-- ============================ INCOMING ============================ -->
       <section class="column" aria-labelledby="incoming-title">
         <h2 id="incoming-title">Incoming · Telemetry</h2>
-        <p class="placeholder">Live-Daten von Trainer und Pulsgurt folgen in Phase 4.</p>
+
+        <div class="device-row">
+          <div class="device-card">
+            <div class="device-title">Trainer <span id="trainer-name" class="muted"></span></div>
+            <div class="chips"><span id="trainer-state" class="chip">disconnected</span><span id="trainer-control" class="chip">control: none</span></div>
+          </div>
+          <div class="device-card">
+            <div class="device-title">Pulsgurt <span id="hrm-name" class="muted"></span></div>
+            <div class="chips"><span id="hrm-state" class="chip">disconnected</span><span id="hrm-contact" class="chip">contact: –</span></div>
+          </div>
+        </div>
+
+        <div class="metrics" id="metrics"></div>
+
+        <details open>
+          <summary>Indoor Bike Data <span class="muted" id="ibd-meta"></span></summary>
+          <div class="hex" id="ibd-hex">–</div>
+          <div class="flags" id="ibd-flags"></div>
+          <div class="diag" id="ibd-diag"></div>
+        </details>
+
+        <details open>
+          <summary>Machine Status / Training Status</summary>
+          <div class="kv"><span>Training Status</span><span id="training-status">–</span></div>
+          <ul class="list" id="machine-status-list"><li class="muted">Noch keine Meldung</li></ul>
+        </details>
+
+        <details>
+          <summary>Fähigkeiten (0x2ACC, Ranges, Geräteinfo)</summary>
+          <div id="capabilities" class="muted">Noch nicht verbunden</div>
+        </details>
+
+        <details open>
+          <summary>Ereignisse</summary>
+          <ul class="list" id="event-list"><li class="muted">–</li></ul>
+        </details>
+
+        <details open>
+          <summary>Paket-Log <span class="muted" id="log-meta"></span></summary>
+          <div class="toolbar">
+            <label><input type="checkbox" id="log-pause" /> Pause</label>
+            <label><input type="checkbox" id="log-hide-stream" /> Stream ausblenden (Bike Data, HR)</label>
+            <button type="button" id="log-clear">Leeren</button>
+            <button type="button" id="report-copy">Bericht kopieren</button>
+            <button type="button" id="report-download">Bericht herunterladen</button>
+          </div>
+          <div class="log-wrap">
+            <table class="log">
+              <thead><tr><th>Zeit</th><th></th><th>Gerät</th><th>Characteristic</th><th>Hex</th><th>Inhalt</th></tr></thead>
+              <tbody id="log-body"></tbody>
+            </table>
+          </div>
+        </details>
       </section>
 
+      <!-- ============================ OUTGOING ============================ -->
       <section class="column" aria-labelledby="outgoing-title">
         <h2 id="outgoing-title">Outgoing · Control</h2>
-        <p class="placeholder">Steuerung (Connect, Control, ERG, Simulation) folgt in Phase 5.</p>
+
+        <div class="panel">
+          <h3>Verbindung</h3>
+          <div class="button-row">
+            <button type="button" class="primary" id="trainer-connect">Trainer verbinden</button>
+            <button type="button" id="trainer-disconnect" disabled>Trainer trennen</button>
+          </div>
+          <div class="button-row">
+            <button type="button" class="primary" id="hrm-connect">Pulsgurt verbinden</button>
+            <button type="button" id="hrm-disconnect" disabled>Pulsgurt trennen</button>
+          </div>
+          <p class="hint" id="connection-hint">
+            Chrome oder Edge nötig. Unter Windows den Trainer <strong>nicht</strong> in den Bluetooth-Einstellungen koppeln.
+          </p>
+        </div>
+
+        <div class="panel" id="sim-panel" hidden>
+          <h3>Simulator</h3>
+          <label class="slider">
+            <span>Kadenz Fahrer <output id="sim-cadence-value">85</output> rpm</span>
+            <input type="range" id="sim-cadence" min="0" max="130" value="85" />
+          </label>
+          <label><input type="checkbox" id="sim-foreign-control" /> Andere App hält die Kontrolle</label>
+          <div class="button-row">
+            <button type="button" id="sim-link-loss">Verbindungsabbruch simulieren</button>
+            <button type="button" id="sim-control-loss">Kontrollverlust simulieren</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Steuerung</h3>
+          <p class="placeholder">Request Control, Reset, ERG, Simulation und Start/Stop folgen in Phase 5.</p>
+        </div>
       </section>
     </main>
 
