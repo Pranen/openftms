@@ -72,7 +72,7 @@ describe('Tacx Flux 2 recordings', () => {
   it('connects to a replayed Flux 2 and clamps ERG to 800 W', async () => {
     const text = (s: string) => new TextEncoder().encode(s);
     const peripheral: MockPeripheral = new MockPeripheral({
-      name: 'Tacx Flux 2',
+      name: FLUX.name,
       latencyMs: 1,
       services: [
         {
@@ -86,6 +86,7 @@ describe('Tacx Flux 2 recordings', () => {
               value: fromHex(FLUX.supportedResistanceLevelRange),
             },
             { uuid: CHARACTERISTIC.indoorBikeData, properties: { notify: true } },
+            { uuid: CHARACTERISTIC.fitnessMachineStatus, properties: { notify: true } },
             {
               uuid: CHARACTERISTIC.fitnessMachineControlPoint,
               properties: { write: true, indicate: true },
@@ -112,7 +113,7 @@ describe('Tacx Flux 2 recordings', () => {
       await trainer.connect();
       const caps = trainer.capabilities;
       expect(caps?.deviceInformation).toMatchObject(FLUX.deviceInformation);
-      expect(caps?.characteristics).toMatchObject({ indoorBikeData: true, controlPoint: true, trainingStatus: false });
+      expect(caps?.characteristics).toEqual(FLUX.characteristics);
       await expect.poll(() => trainer.control).toBe('granted');
 
       peripheral.characteristic(SERVICE.fitnessMachine, CHARACTERISTIC.indoorBikeData).notify(fromHex(FLUX.indoorBikeData.pedalling));

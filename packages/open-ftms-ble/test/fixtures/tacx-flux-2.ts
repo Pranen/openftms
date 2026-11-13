@@ -3,7 +3,12 @@
  * with Chrome 157 on Windows 11, 2026-11-13. Hex as shown in the demo log.
  */
 export const TACX_FLUX_2 = {
+  /** Advertised name; the suffix is the serial number. */
+  name: 'Tacx Flux-2 26370',
   deviceInformation: { manufacturerName: 'Tacx', modelNumber: 'T2980', firmwareRevision: '3.3.45' },
+  /** Machine Status (0x2ADA) present, Training Status (0x2AD3) absent, Cycling Power Service offered too. */
+  characteristics: { indoorBikeData: true, controlPoint: true, machineStatus: true, trainingStatus: false },
+  hasCyclingPowerService: true,
   /** 0x2ACC: machine 0x00004082, target setting 0x0000a00c. */
   fitnessMachineFeature: '82 40 00 00 0c a0 00 00',
   /** 0x2AD8: 0 … 800 W, increment 1. */
