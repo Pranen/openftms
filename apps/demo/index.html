@@ -108,9 +108,92 @@
           </div>
         </div>
 
+        <fieldset class="controls" id="controls" disabled>
+          <div class="panel">
+            <h3>Kontrolle <span class="muted" id="control-hint"></span></h3>
+            <div class="button-row">
+              <button type="button" id="cmd-request-control">Request Control</button>
+              <button type="button" id="cmd-reset">Reset</button>
+            </div>
+            <div class="button-row">
+              <button type="button" id="cmd-start">Start</button>
+              <button type="button" id="cmd-pause">Pause</button>
+              <button type="button" id="cmd-stop">Stop</button>
+            </div>
+          </div>
+
+          <div class="panel" id="erg-panel">
+            <h3>ERG · Zielleistung <span class="muted unsupported" hidden>vom Trainer nicht unterstützt</span></h3>
+            <label class="slider">
+              <span>Ziel <output id="erg-value">150</output> W <span class="muted" id="erg-range"></span></span>
+              <input type="range" id="erg-slider" min="0" max="800" step="5" value="150" />
+            </label>
+            <div class="button-row">
+              <input type="number" id="erg-input" min="0" max="800" step="1" value="150" aria-label="Zielleistung in Watt" />
+              <button type="button" class="primary" id="erg-send">ERG setzen</button>
+              <label><input type="checkbox" id="erg-live" /> live</label>
+            </div>
+            <div class="button-row presets">
+              <button type="button" data-erg="100">100 W</button>
+              <button type="button" data-erg="150">150 W</button>
+              <button type="button" data-erg="200">200 W</button>
+              <button type="button" data-erg="250">250 W</button>
+              <button type="button" data-erg="300">300 W</button>
+            </div>
+          </div>
+
+          <div class="panel" id="sim-control-panel">
+            <h3>Simulation <span class="muted unsupported" hidden>vom Trainer nicht unterstützt</span></h3>
+            <label class="slider">
+              <span>Steigung <output id="grade-value">0.0</output> %</span>
+              <input type="range" id="sim-grade" min="-10" max="20" step="0.1" value="0" />
+            </label>
+            <label class="slider">
+              <span>Wind <output id="wind-value">0.0</output> m/s <span class="muted">(+ Gegenwind)</span></span>
+              <input type="range" id="sim-wind" min="-15" max="15" step="0.1" value="0" />
+            </label>
+            <div class="field-row">
+              <label>Crr <input type="number" id="sim-crr" min="0" max="0.0255" step="0.0001" value="0.004" /></label>
+              <label>Cw <span class="muted">kg/m</span> <input type="number" id="sim-cw" min="0" max="2.55" step="0.01" value="0.51" /></label>
+            </div>
+            <div class="button-row">
+              <button type="button" class="primary" id="sim-send">Simulation senden</button>
+              <label><input type="checkbox" id="sim-live" /> live</label>
+            </div>
+            <div class="button-row presets">
+              <button type="button" data-grade="-3">−3 %</button>
+              <button type="button" data-grade="0">flach</button>
+              <button type="button" data-grade="4">4 %</button>
+              <button type="button" data-grade="8">8 %</button>
+              <button type="button" data-grade="12">12 %</button>
+            </div>
+          </div>
+
+          <div class="panel" id="resistance-panel">
+            <h3>Widerstand <span class="muted unsupported" hidden>vom Trainer nicht unterstützt</span></h3>
+            <label class="slider">
+              <span>Stufe <output id="resistance-value">20.0</output> <span class="muted" id="resistance-range"></span></span>
+              <input type="range" id="resistance-slider" min="0" max="100" step="0.1" value="20" />
+            </label>
+            <div class="button-row">
+              <button type="button" class="primary" id="resistance-send">Widerstand setzen</button>
+              <label><input type="checkbox" id="resistance-live" /> live</label>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>Raw Control Point <span class="muted">0x2AD9</span></h3>
+            <div class="button-row">
+              <input type="text" id="raw-input" class="mono" placeholder="z. B. 05 c8 00" value="00" aria-label="Bytes als Hex" spellcheck="false" />
+              <button type="button" id="raw-send">Senden</button>
+            </div>
+            <p class="hint">Ohne Feature-Prüfung und ohne Zusammenfassen. 05 = Zielleistung, 11 = Simulation, 07 = Start, 08 01 = Stop.</p>
+          </div>
+        </fieldset>
+
         <div class="panel">
-          <h3>Steuerung</h3>
-          <p class="placeholder">Request Control, Reset, ERG, Simulation und Start/Stop folgen in Phase 5.</p>
+          <h3>Befehle <span class="muted">Antwort und Dauer</span></h3>
+          <ul class="list" id="command-list"><li class="muted">Noch keine Befehle</li></ul>
         </div>
       </section>
     </main>

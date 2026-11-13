@@ -12,6 +12,7 @@ import {
   TARGET_SETTING_FEATURE_FLAGS,
   UserCancelledError,
   WebBluetoothTransport,
+  fromHex,
   toHex,
   type BleTransport,
   type ConnectionState,
@@ -130,6 +131,7 @@ function bind({ source, trainer, hrm }: Session): void {
   trainer.on('modeChange', render);
   trainer.on('capabilities', (c) => {
     renderCapabilities(c);
+    applyRanges(c);
     remember('Trainer', trainer);
   });
 
@@ -266,6 +268,7 @@ const render = rafThrottle(() => {
   for (const input of document.querySelectorAll<HTMLInputElement>('#source-select input')) {
     input.disabled = !(trainerIdle && hrmIdle);
   }
+  renderControls();
 });
 
 function rangeLabel(r: SupportedRange | undefined, unit: string): string {
@@ -363,6 +366,201 @@ $<HTMLInputElement>('log-hide-stream').addEventListener('change', (e) => {
   log.hideStream = (e.target as HTMLInputElement).checked;
 });
 $('log-clear').addEventListener('click', () => log.clear());
+
+// ---------------------------------------------------------------------------
+// Control column
+// ---------------------------------------------------------------------------
+
+const commands: Array<{ at: number; label: string; outcome: string; ok: boolean; ms: number }> = [];
+/** Per coalescing key: only the newest call of a live slider burst is logged. */
+const latestCall = new Map<string, number>();
+let callCounter = 0;
+
+function renderCommands(): void {
+  $('command-list').replaceChildren(
+    ...commands.map((c) =>
+      h(
+        'li',
+        { class: c.ok ? 'ok' : 'error' },
+        h('span', { class: 'mono muted' }, timeOfDay(c.at)),
+        ' ',
+        c.label,
+        ' → ',
+        c.outcome,
+        h('span', { class: 'ms' }, `${c.ms} ms`),
+      ),
+    ),
+  );
+}
+
+/** Runs a trainer command and logs its outcome; `key` groups live slider bursts. */
+async function command(label: string, run: () => Promise<unknown>, key?: string): Promise<void> {
+  const id = ++callCounter;
+  if (key) latestCall.set(key, id);
+  const started = performance.now();
+  let outcome = 'success';
+  let ok = true;
+  try {
+    const result = await run();
+    if (result && typeof result === 'object' && 'result' in result && 'bytes' in result) {
+      outcome = `${String(result.result)} · ${toHex(result.bytes as Uint8Array)}`;
+    }
+  } catch (error) {
+    ok = false;
+    outcome = error instanceof Error ? error.message : String(error);
+  }
+  if (key && latestCall.get(key) !== id) return; // superseded by a newer value
+  commands.unshift({ at: Date.now(), label, outcome, ok, ms: Math.round(performance.now() - started) });
+  commands.splice(12);
+  addEvent(`Befehl: ${label} → ${outcome} (${commands[0]?.ms ?? 0} ms)`);
+  renderCommands();
+  render();
+}
+
+const ergSlider = $<HTMLInputElement>('erg-slider');
+const ergInput = $<HTMLInputElement>('erg-input');
+const gradeSlider = $<HTMLInputElement>('sim-grade');
+const windSlider = $<HTMLInputElement>('sim-wind');
+const crrInput = $<HTMLInputElement>('sim-crr');
+const cwInput = $<HTMLInputElement>('sim-cw');
+const resistanceSlider = $<HTMLInputElement>('resistance-slider');
+const isLive = (id: string) => $<HTMLInputElement>(id).checked;
+
+function sendErg(): void {
+  const watts = Number(ergInput.value);
+  void command(`ERG ${watts} W`, () => session.trainer.setTargetPower(watts), 'erg');
+}
+
+function setErg(watts: number, send: boolean): void {
+  ergSlider.value = String(watts);
+  ergInput.value = String(watts);
+  $('erg-value').textContent = String(watts);
+  if (send) sendErg();
+}
+
+function simulationValues() {
+  return {
+    gradePercent: Number(gradeSlider.value),
+    windSpeedMps: Number(windSlider.value),
+    crr: Number(crrInput.value),
+    cw: Number(cwInput.value),
+  };
+}
+
+function sendSimulation(): void {
+  const p = simulationValues();
+  void command(
+    `Simulation ${p.gradePercent.toFixed(1)} % · Wind ${p.windSpeedMps.toFixed(1)} m/s · Crr ${p.crr} · Cw ${p.cw}`,
+    () => session.trainer.setSimulation(p),
+    'simulation',
+  );
+}
+
+function updateSimulationLabels(): void {
+  $('grade-value').textContent = Number(gradeSlider.value).toFixed(1);
+  $('wind-value').textContent = Number(windSlider.value).toFixed(1);
+}
+
+function sendResistance(): void {
+  const level = Number(resistanceSlider.value);
+  void command(`Widerstand ${level.toFixed(1)}`, () => session.trainer.setResistanceLevel(level), 'resistance');
+}
+
+$('cmd-request-control').addEventListener('click', () => void command('Request Control', () => session.trainer.requestControl()));
+$('cmd-reset').addEventListener('click', () => void command('Reset', () => session.trainer.reset()));
+$('cmd-start').addEventListener('click', () => void command('Start', () => session.trainer.start()));
+$('cmd-pause').addEventListener('click', () => void command('Pause', () => session.trainer.pause()));
+$('cmd-stop').addEventListener('click', () => void command('Stop', () => session.trainer.stop()));
+
+ergSlider.addEventListener('input', () => setErg(Number(ergSlider.value), isLive('erg-live')));
+ergInput.addEventListener('change', () => setErg(Number(ergInput.value), false));
+ergInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') setErg(Number(ergInput.value), true);
+});
+$('erg-send').addEventListener('click', () => setErg(Number(ergInput.value), true));
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-erg]')) {
+  b.addEventListener('click', () => setErg(Number(b.dataset['erg']), true));
+}
+
+for (const el of [gradeSlider, windSlider]) {
+  el.addEventListener('input', () => {
+    updateSimulationLabels();
+    if (isLive('sim-live')) sendSimulation();
+  });
+}
+for (const el of [crrInput, cwInput]) {
+  el.addEventListener('change', () => {
+    if (isLive('sim-live')) sendSimulation();
+  });
+}
+$('sim-send').addEventListener('click', sendSimulation);
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-grade]')) {
+  b.addEventListener('click', () => {
+    gradeSlider.value = b.dataset['grade'] ?? '0';
+    updateSimulationLabels();
+    sendSimulation();
+  });
+}
+
+resistanceSlider.addEventListener('input', () => {
+  $('resistance-value').textContent = Number(resistanceSlider.value).toFixed(1);
+  if (isLive('resistance-live')) sendResistance();
+});
+$('resistance-send').addEventListener('click', sendResistance);
+
+function sendRaw(): void {
+  const text = $<HTMLInputElement>('raw-input').value;
+  void command(`Raw ${text.trim()}`, () => session.trainer.sendRaw(fromHex(text)));
+}
+$('raw-send').addEventListener('click', sendRaw);
+$<HTMLInputElement>('raw-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendRaw();
+});
+
+/** Adapts slider limits to the trainer's supported ranges. */
+function applyRanges(c: FtmsCapabilities): void {
+  const power = c.powerRange;
+  if (power?.maximum !== undefined && power.minimum !== undefined && power.maximum > power.minimum) {
+    for (const el of [ergSlider, ergInput]) {
+      el.min = String(power.minimum);
+      el.max = String(power.maximum);
+    }
+    $('erg-range').textContent = `(${power.minimum} … ${power.maximum} W)`;
+  }
+  const resistance = c.resistanceRange;
+  if (resistance?.maximum !== undefined && resistance.minimum !== undefined && resistance.maximum > resistance.minimum) {
+    resistanceSlider.min = String(resistance.minimum);
+    resistanceSlider.max = String(resistance.maximum);
+    resistanceSlider.step = String(resistance.increment && resistance.increment > 0 ? resistance.increment : 0.1);
+    $('resistance-range').textContent = `(${resistance.minimum} … ${resistance.maximum})`;
+  }
+}
+
+function renderControls(): void {
+  const { trainer } = session;
+  const ready = trainer.isReady;
+  $<HTMLFieldSetElement>('controls').disabled = !ready;
+  const hasControlPoint = trainer.capabilities?.characteristics.controlPoint ?? true;
+  $('control-hint').textContent = !ready
+    ? '– Trainer nicht bereit'
+    : !hasControlPoint
+      ? '– kein Control Point'
+      : trainer.control === 'blocked'
+        ? '– eine andere App hält die Kontrolle'
+        : '';
+  const panels: Array<[string, Parameters<FtmsTrainer['supports']>[0]]> = [
+    ['erg-panel', 'powerTarget'],
+    ['sim-control-panel', 'indoorBikeSimulation'],
+    ['resistance-panel', 'resistanceTarget'],
+  ];
+  for (const [id, feature] of panels) {
+    const supported = trainer.supports(feature);
+    const panel = $(id);
+    panel.classList.toggle('unsupported-panel', !supported);
+    const note = panel.querySelector<HTMLElement>('.unsupported');
+    if (note) note.hidden = supported;
+  }
+}
 
 function report(): string {
   return buildReport({
