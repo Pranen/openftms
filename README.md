@@ -7,6 +7,7 @@ Zero-dependency TypeScript library for Web Bluetooth fitness devices — FTMS tr
 |---|---|
 | `packages/open-ftms-ble` | the library (`transport/` → `protocol/` → `devices/`) |
 | `apps/demo` | Vite test harness: telemetry (left) and control (right) |
+| `docs` | [API](docs/api.md), [How-To: interval training](docs/howto-interval-training.md), [troubleshooting](docs/troubleshooting.md) (German) |
 
 ## Library at a glance
 
@@ -36,6 +37,8 @@ target is restored after a reconnect. Slider bursts are coalesced ("latest wins"
 | protocol | `src/protocol` | pure parsers/encoders for FTMS (0x2AD2, 0x2ADA, 0x2ACC, 0x2AD3, ranges, 0x2AD9) and HRS (0x2A37) |
 | transport | `src/transport` | Web Bluetooth, mock transport, GATT queue |
 | simulator | `src/simulator` | software trainer and heart-rate strap on the mock transport |
+| replay | `src/replay` | `SessionRecorder` and `ReplayTransport`: record real rides, replay them without hardware |
+| examples | `examples` | `interval-workout.ts`, the tested code of the interval How-To |
 
 ## Demo harness
 
@@ -43,9 +46,14 @@ target is restored after a reconnect. Slider bursts are coalesced ("latest wins"
 to **Simulator** to try everything without hardware (incl. link loss, control
 loss and "another app holds control"). The right column sends Request Control,
 Reset, Start/Pause/Stop, ERG, simulation (grade, wind, Crr, Cw), resistance and
-raw control point bytes; "live" sends while dragging (coalesced, latest wins). **Bericht kopieren/herunterladen** creates
-a text report with device info and capabilities of every device seen (kept after
-disconnecting), events, GATT operation timings and the last packets.
+raw control point bytes; "live" sends while dragging (coalesced, latest wins).
+**Intervall-Programm** runs the How-To workout (with a ×10 time-lapse).
+
+- **Bericht kopieren/herunterladen**: text report with device info and capabilities
+  of every device seen (kept after disconnecting), events, GATT timings and the last packets.
+- **Aufnahme herunterladen / Aufnahme laden…**: record a session as JSON and
+  replay it later as a source, without hardware.
+- **Letzten Trainer/Pulsgurt verbinden**: reconnect a device picked earlier without the chooser.
 
 ## Development
 
@@ -55,6 +63,7 @@ npm run dev        # demo on http://localhost:5173 (Chrome/Edge)
 npm test           # library unit tests
 npm run typecheck
 npm run build
+npm pack -w open-ftms-ble   # tarball for other projects: npm install ./open-ftms-ble-0.1.0.tgz
 ```
 
 Web Bluetooth works in Chromium browsers only (Chrome, Edge) and needs a secure
