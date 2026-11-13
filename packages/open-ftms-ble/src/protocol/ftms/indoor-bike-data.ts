@@ -1,5 +1,5 @@
-import { ByteReader, fromFixedPoint, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes';
-import { decodeFlags, put, reservedBits, type FlagSet } from '../util';
+import { ByteReader, fromFixedPoint, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes.js';
+import { decodeFlags, put, reservedBits, type FlagSet } from '../util.js';
 
 /**
  * Flag bits of Indoor Bike Data (0x2AD2), index = bit position.

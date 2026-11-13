@@ -12,8 +12,8 @@ import {
   parseIndoorBikeData,
   parseSupportedPowerRange,
   parseSupportedResistanceLevelRange,
-} from '../src/index';
-import { HEART_RATE_STRAP, TACX_FLUX_2 as FLUX } from './fixtures/tacx-flux-2';
+} from '../src/index.js';
+import { HEART_RATE_STRAP, TACX_FLUX_2 as FLUX } from './fixtures/tacx-flux-2.js';
 
 describe('Tacx Flux 2 recordings', () => {
   it('parses the feature flags', () => {

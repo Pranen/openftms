@@ -1,5 +1,5 @@
-import { ByteReader, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes';
-import { decodeFlags, reservedBits, type FlagSet } from '../util';
+import { ByteReader, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes.js';
+import { decodeFlags, reservedBits, type FlagSet } from '../util.js';
 
 /** Fitness Machine Features field of 0x2ACC, index = bit position. */
 export const MACHINE_FEATURE_FLAGS = [

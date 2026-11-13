@@ -1,6 +1,6 @@
-import { ByteWriter } from '../protocol/bytes';
-import { CHARACTERISTIC, SERVICE } from '../protocol/uuids';
-import { MockPeripheral, type MockCharacteristic } from '../transport/mock-transport';
+import { ByteWriter } from '../protocol/bytes.js';
+import { CHARACTERISTIC, SERVICE } from '../protocol/uuids.js';
+import { MockPeripheral, type MockCharacteristic } from '../transport/mock-transport.js';
 
 export interface SimulatedHeartRateMonitorOptions {
   name?: string;

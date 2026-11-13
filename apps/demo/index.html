@@ -12,7 +12,10 @@
         <fieldset class="segmented" id="source-select" aria-label="Datenquelle">
           <label><input type="radio" name="source" value="ble" checked /> Bluetooth</label>
           <label><input type="radio" name="source" value="sim" /> Simulator</label>
+          <label title="Zuerst eine Aufnahme laden"><input type="radio" name="source" value="replay" disabled /> Aufnahme</label>
         </fieldset>
+        <button type="button" id="replay-load">Aufnahme laden…</button>
+        <input type="file" id="replay-file" accept=".json,application/json" hidden />
         <div id="env-status" class="badge">…</div>
       </div>
     </header>
@@ -66,6 +69,7 @@
             <button type="button" id="log-clear">Leeren</button>
             <button type="button" id="report-copy">Bericht kopieren</button>
             <button type="button" id="report-download">Bericht herunterladen</button>
+            <button type="button" id="recording-download">Aufnahme herunterladen</button>
           </div>
           <div class="log-wrap">
             <table class="log">
@@ -85,10 +89,12 @@
           <div class="button-row">
             <button type="button" class="primary" id="trainer-connect">Trainer verbinden</button>
             <button type="button" id="trainer-disconnect" disabled>Trainer trennen</button>
+            <button type="button" id="trainer-known" hidden>Letzten Trainer verbinden</button>
           </div>
           <div class="button-row">
             <button type="button" class="primary" id="hrm-connect">Pulsgurt verbinden</button>
             <button type="button" id="hrm-disconnect" disabled>Pulsgurt trennen</button>
+            <button type="button" id="hrm-known" hidden>Letzten Pulsgurt verbinden</button>
           </div>
           <p class="hint" id="connection-hint">
             Chrome oder Edge nötig. Unter Windows den Trainer <strong>nicht</strong> in den Bluetooth-Einstellungen koppeln.
@@ -179,6 +185,30 @@
               <button type="button" class="primary" id="resistance-send">Widerstand setzen</button>
               <label><input type="checkbox" id="resistance-live" /> live</label>
             </div>
+          </div>
+
+          <div class="panel" id="workout-panel">
+            <h3>Intervall-Programm <span class="muted">ERG</span></h3>
+            <div class="field-row">
+              <label>FTP <input type="number" id="wo-ftp" min="50" max="600" step="5" value="200" /> W</label>
+              <label>Wiederholungen <input type="number" id="wo-repeats" min="1" max="20" value="4" /></label>
+            </div>
+            <div class="field-row">
+              <label>Intervall <input type="number" id="wo-work" min="5" max="1200" step="5" value="60" /> s @ 110 %</label>
+              <label>Pause <input type="number" id="wo-rest" min="5" max="1200" step="5" value="60" /> s @ 50 %</label>
+            </div>
+            <div class="field-row">
+              <label>Einfahren <input type="number" id="wo-warmup" min="0" max="1800" step="30" value="120" /> s</label>
+              <label>Ausfahren <input type="number" id="wo-cooldown" min="0" max="1800" step="30" value="120" /> s</label>
+            </div>
+            <div class="button-row">
+              <button type="button" class="primary" id="wo-start">Start</button>
+              <button type="button" id="wo-pause" disabled>Pause</button>
+              <button type="button" id="wo-stop" disabled>Stop</button>
+              <label><input type="checkbox" id="wo-fast" /> Zeitraffer ×10</label>
+            </div>
+            <progress id="wo-progress" value="0" max="1"></progress>
+            <div class="kv"><span id="wo-step">–</span><span id="wo-status" class="mono">–</span></div>
           </div>
 
           <div class="panel">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fromHex, hasParseIssues, parseIndoorBikeData } from '../src/index';
+import { fromHex, hasParseIssues, parseIndoorBikeData } from '../src/index.js';
 
 describe('parseIndoorBikeData (0x2AD2)', () => {
   it('parses speed, cadence and power (typical trainer packet)', () => {

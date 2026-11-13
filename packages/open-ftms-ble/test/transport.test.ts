@@ -12,7 +12,7 @@ import {
   WebBluetoothTransport,
   delay,
   toHex,
-} from '../src/index';
+} from '../src/index.js';
 
 function makePeripheral(latencyMs = 5) {
   return new MockPeripheral({

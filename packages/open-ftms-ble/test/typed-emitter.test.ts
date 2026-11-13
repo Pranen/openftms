@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { TypedEmitter } from '../src/index';
+import { TypedEmitter } from '../src/index.js';
 
 interface Events {
   tick: number;

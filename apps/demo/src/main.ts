@@ -7,6 +7,10 @@ import {
   LIBRARY_VERSION,
   MACHINE_FEATURE_FLAGS,
   MockTransport,
+  ReplayTransport,
+  SessionRecorder,
+  parseRecording,
+  type Recording,
   SimulatedHeartRateMonitor,
   SimulatedTrainer,
   TARGET_SETTING_FEATURE_FLAGS,
@@ -27,8 +31,9 @@ import { $, h, rafThrottle, timeOfDay } from './dom';
 import { diagnosticsLabel, duration, machineStatusLabel, modeLabel, num } from './format';
 import { PacketLog } from './packet-log';
 import { buildReport } from './report';
+import { IntervalWorkout, intervalSession } from '../../../packages/open-ftms-ble/examples/interval-workout';
 
-type Source = 'ble' | 'sim';
+type Source = 'ble' | 'sim' | 'replay';
 
 interface Session {
   readonly source: Source;
@@ -53,6 +58,20 @@ const gattTraces: string[] = [];
 const knownDevices = new Map<string, unknown>();
 // Assigned at the bottom, once `render` and all handlers exist.
 let session: Session;
+/** Records every session; "Aufnahme herunterladen" saves it as JSON for replay. */
+let recorder = new SessionRecorder();
+let loadedRecording: Recording | undefined;
+
+const SOURCE_LABEL: Record<Source, string> = { ble: 'Bluetooth', sim: 'Simulator', replay: 'Aufnahme' };
+const KNOWN_KEY = { Trainer: 'open-ftms.knownTrainerId', Pulsgurt: 'open-ftms.knownHrmId' } as const;
+
+function storage(): Storage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
 
 function createSession(source: Source): Session {
   let s: Session;
@@ -68,11 +87,18 @@ function createSession(source: Source): Session {
       simTrainer,
       simHrm,
     };
+  } else if (source === 'replay' && loadedRecording) {
+    const transport = new ReplayTransport(loadedRecording);
+    s = { source, transport, trainer: new FtmsTrainer({ transport }), hrm: new HeartRateMonitor({ transport }) };
   } else {
     const transport = new WebBluetoothTransport();
     s = { source, transport, trainer: new FtmsTrainer({ transport }), hrm: new HeartRateMonitor({ transport }) };
   }
   bind(s);
+  recorder.detach();
+  recorder = new SessionRecorder();
+  recorder.attach(s.trainer, 'Trainer');
+  recorder.attach(s.hrm, 'Pulsgurt');
   return s;
 }
 
@@ -107,7 +133,10 @@ function bind({ source, trainer, hrm }: Session): void {
   trainer.on('connectionStateChange', (e) => {
     addEvent(`Trainer: ${e.previous} → ${e.state}${e.error ? ` (${e.error.message})` : ''}`);
     trainerReady(e.state);
-    if (e.state === 'ready') remember('Trainer', trainer);
+    if (e.state === 'ready') {
+      remember('Trainer', trainer);
+      if (source === 'ble' && trainer.peripheral) storage()?.setItem(KNOWN_KEY.Trainer, trainer.peripheral.id);
+    }
     render();
   });
   trainer.on('reconnectScheduled', (e) =>
@@ -138,7 +167,10 @@ function bind({ source, trainer, hrm }: Session): void {
   hrm.on('connectionStateChange', (e) => {
     addEvent(`Pulsgurt: ${e.previous} → ${e.state}${e.error ? ` (${e.error.message})` : ''}`);
     hrmReady(e.state);
-    if (e.state === 'ready') remember('Pulsgurt', hrm);
+    if (e.state === 'ready') {
+      remember('Pulsgurt', hrm);
+      if (source === 'ble' && hrm.peripheral) storage()?.setItem(KNOWN_KEY.Pulsgurt, hrm.peripheral.id);
+    }
     render();
   });
   hrm.on('reconnectScheduled', (e) =>
@@ -266,8 +298,14 @@ const render = rafThrottle(() => {
   $<HTMLButtonElement>('hrm-connect').disabled = !hrmIdle;
   $<HTMLButtonElement>('hrm-disconnect').disabled = hrmIdle;
   for (const input of document.querySelectorAll<HTMLInputElement>('#source-select input')) {
-    input.disabled = !(trainerIdle && hrmIdle);
+    input.disabled = !(trainerIdle && hrmIdle) || (input.value === 'replay' && !loadedRecording);
   }
+  $<HTMLButtonElement>('replay-load').disabled = !(trainerIdle && hrmIdle);
+  const known = storage();
+  $('trainer-known').hidden = session.source !== 'ble' || !known?.getItem(KNOWN_KEY.Trainer);
+  $('hrm-known').hidden = session.source !== 'ble' || !known?.getItem(KNOWN_KEY.Pulsgurt);
+  $<HTMLButtonElement>('trainer-known').disabled = !trainerIdle;
+  $<HTMLButtonElement>('hrm-known').disabled = !hrmIdle;
   renderControls();
 });
 
@@ -329,24 +367,79 @@ $('trainer-disconnect').addEventListener('click', () => void session.trainer.dis
 $('hrm-connect').addEventListener('click', connectHandler('Pulsgurt', () => session.hrm.connect()));
 $('hrm-disconnect').addEventListener('click', () => void session.hrm.disconnect());
 
+function connectKnown(label: keyof typeof KNOWN_KEY, device: FtmsTrainer | HeartRateMonitor): void {
+  const id = storage()?.getItem(KNOWN_KEY[label]);
+  if (!id) return;
+  addEvent(`${label}: suche zuletzt verwendetes Gerät …`);
+  device
+    .connectKnown(id)
+    .then((found) => {
+      if (!found) {
+        addEvent(`${label}: Gerät dem Browser nicht mehr bekannt – bitte normal verbinden`);
+        storage()?.removeItem(KNOWN_KEY[label]);
+      }
+    })
+    .catch((error: unknown) => addEvent(`${label}: ${error instanceof Error ? error.message : String(error)}`))
+    .finally(render);
+}
+$('trainer-known').addEventListener('click', () => connectKnown('Trainer', session.trainer));
+$('hrm-known').addEventListener('click', () => connectKnown('Pulsgurt', session.hrm));
+
+function switchSource(source: Source): void {
+  workout?.stop();
+  session.trainer.removeAllListeners();
+  session.hrm.removeAllListeners();
+  session = createSession(source);
+  lastBikeData = undefined;
+  machineStatuses = [];
+  $('sim-panel').hidden = session.source !== 'sim';
+  $('ibd-hex').textContent = '–';
+  $('ibd-flags').replaceChildren();
+  $('capabilities').textContent = 'Noch nicht verbunden';
+  $('capabilities').className = 'muted';
+  addEvent(`Quelle: ${SOURCE_LABEL[session.source]}`);
+  void updateEnvStatus();
+  render();
+}
+
 for (const input of document.querySelectorAll<HTMLInputElement>('#source-select input')) {
   input.addEventListener('change', () => {
-    if (!input.checked) return;
-    session.trainer.removeAllListeners();
-    session.hrm.removeAllListeners();
-    session = createSession(input.value as Source);
-    lastBikeData = undefined;
-    machineStatuses = [];
-    $('sim-panel').hidden = session.source !== 'sim';
-    $('ibd-hex').textContent = '–';
-    $('ibd-flags').replaceChildren();
-    $('capabilities').textContent = 'Noch nicht verbunden';
-    $('capabilities').className = 'muted';
-    addEvent(`Quelle: ${session.source === 'sim' ? 'Simulator' : 'Bluetooth'}`);
-    void updateEnvStatus();
-    render();
+    if (input.checked) switchSource(input.value as Source);
   });
 }
+
+const replayFile = $<HTMLInputElement>('replay-file');
+$('replay-load').addEventListener('click', () => replayFile.click());
+replayFile.addEventListener('change', async () => {
+  const file = replayFile.files?.[0];
+  replayFile.value = '';
+  if (!file) return;
+  try {
+    loadedRecording = parseRecording(JSON.parse(await file.text()));
+  } catch (error) {
+    addEvent(`Aufnahme ungültig: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  const names = loadedRecording.devices.map((d) => d.name ?? d.label).join(', ');
+  addEvent(`Aufnahme geladen: ${file.name} (${names})`);
+  if (session.trainer.connectionState !== 'disconnected') await session.trainer.disconnect();
+  if (session.hrm.connectionState !== 'disconnected') await session.hrm.disconnect();
+  const radio = document.querySelector<HTMLInputElement>('#source-select input[value="replay"]');
+  if (radio) {
+    radio.disabled = false;
+    radio.checked = true;
+  }
+  switchSource('replay');
+});
+
+$('recording-download').addEventListener('click', () => {
+  const json = JSON.stringify(recorder.toRecording(), null, 1);
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+  const a = h('a', { href: url, download: `open-ftms-recording-${new Date().toISOString().replace(/[:.]/g, '-')}.json` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  addEvent(`Aufnahme gespeichert (${recorder.packetCount} Pakete)`);
+});
 
 const cadence = $<HTMLInputElement>('sim-cadence');
 cadence.addEventListener('input', () => {
@@ -562,6 +655,63 @@ function renderControls(): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Interval workout (the How-To example from docs/howto-interval-training.md)
+// ---------------------------------------------------------------------------
+
+let workout: IntervalWorkout | undefined;
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+function renderWorkoutButtons(): void {
+  const running = workout?.running ?? false;
+  $<HTMLButtonElement>('wo-start').disabled = running;
+  $<HTMLButtonElement>('wo-pause').disabled = !running;
+  $<HTMLButtonElement>('wo-stop').disabled = !running;
+  for (const id of ['wo-ftp', 'wo-repeats', 'wo-work', 'wo-rest', 'wo-warmup', 'wo-cooldown', 'wo-fast']) {
+    $<HTMLInputElement>(id).disabled = running;
+  }
+}
+
+$('wo-start').addEventListener('click', () => {
+  const value = (id: string) => Number($<HTMLInputElement>(id).value);
+  const steps = intervalSession({
+    ftpW: value('wo-ftp'),
+    repeats: value('wo-repeats'),
+    workS: value('wo-work'),
+    restS: value('wo-rest'),
+    warmupS: value('wo-warmup'),
+    cooldownS: value('wo-cooldown'),
+  });
+  const w = new IntervalWorkout(session.trainer, steps, { speed: $<HTMLInputElement>('wo-fast').checked ? 10 : 1 });
+  workout = w;
+  w.on('step', (p) => addEvent(`Programm: ${p.step.name} · ${p.targetW} W · ${mmss(p.step.durationS)}`));
+  w.on('autoPause', (e) => addEvent(e.paused ? 'Programm: angehalten (nicht am Treten)' : 'Programm: weiter'));
+  w.on('error', (e) => addEvent(`Programm: Ziel nicht gesetzt – ${e instanceof Error ? e.message : String(e)}`));
+  w.on('progress', (p) => {
+    $<HTMLProgressElement>('wo-progress').value = p.totalElapsedS / p.totalDurationS;
+    $('wo-step').textContent = `${p.step.name}${p.paused ? ' (Pause)' : ''}`;
+    $('wo-status').textContent = `${p.targetW} W · noch ${mmss(p.stepRemainingS)} · gesamt ${mmss(p.totalElapsedS)}/${mmss(p.totalDurationS)}`;
+  });
+  w.on('finished', (e) => {
+    addEvent(e.completed ? 'Programm: fertig 🎉' : 'Programm: abgebrochen');
+    $('wo-step').textContent = e.completed ? 'Fertig' : 'Abgebrochen';
+    renderWorkoutButtons();
+  });
+  w.start();
+  renderWorkoutButtons();
+});
+$('wo-pause').addEventListener('click', () => {
+  if (!workout) return;
+  const pausing = $('wo-pause').textContent === 'Pause';
+  if (pausing) workout.pause();
+  else workout.resume();
+  $('wo-pause').textContent = pausing ? 'Weiter' : 'Pause';
+});
+$('wo-stop').addEventListener('click', () => {
+  workout?.stop();
+  $('wo-pause').textContent = 'Pause';
+});
+
 function report(): string {
   return buildReport({
     source: session.source,
@@ -596,15 +746,25 @@ $('report-download').addEventListener('click', () => {
 async function updateEnvStatus(): Promise<void> {
   const badge = $('env-status');
   const available = await session.transport.isAvailable();
-  const label = session.source === 'sim' ? 'Simulator aktiv' : available ? 'Web Bluetooth verfügbar' : 'Web Bluetooth nicht verfügbar';
+  const label =
+    session.source === 'sim'
+      ? 'Simulator aktiv'
+      : session.source === 'replay'
+        ? 'Aufnahme wird abgespielt'
+        : available
+          ? 'Web Bluetooth verfügbar'
+          : 'Web Bluetooth nicht verfügbar';
   badge.textContent = `${label} · ${LIBRARY_NAME} ${LIBRARY_VERSION}`;
-  badge.className = `badge ${session.source === 'sim' ? 'warn' : available ? 'ok' : 'error'}`;
-  $('connection-hint').hidden = session.source === 'sim';
+  badge.className = `badge ${session.source !== 'ble' ? 'warn' : available ? 'ok' : 'error'}`;
+  $('connection-hint').hidden = session.source !== 'ble';
 }
 
 // The browser may restore the radio selection on reload; start with whatever is checked.
-const initialSource =
+const initialSource: Source =
   document.querySelector<HTMLInputElement>('#source-select input:checked')?.value === 'sim' ? 'sim' : 'ble';
+for (const input of document.querySelectorAll<HTMLInputElement>('#source-select input')) {
+  input.checked = input.value === initialSource; // a restored "replay" selection has no recording
+}
 session = createSession(initialSource);
 $('sim-panel').hidden = session.source !== 'sim';
 // Re-render once a second so ages/rates stay current without new packets.

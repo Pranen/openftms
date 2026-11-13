@@ -4,7 +4,7 @@ import {
   NotConnectedError,
   OpenFtmsError,
   UnsupportedFeatureError,
-} from '../errors';
+} from '../errors.js';
 import {
   DEFAULT_SIMULATION_PARAMETERS,
   encodeRequestControl,
@@ -17,10 +17,10 @@ import {
   type ControlPointResponse,
   type IndoorBikeSimulationParameters,
   type ResistanceEncoding,
-} from '../protocol/ftms/control-point';
-import { parseFitnessMachineFeatures, type FitnessMachineFeatures, type TargetSettingFeatures } from '../protocol/ftms/features';
-import { parseIndoorBikeData, type IndoorBikeData } from '../protocol/ftms/indoor-bike-data';
-import { parseMachineStatus, type MachineStatus } from '../protocol/ftms/machine-status';
+} from '../protocol/ftms/control-point.js';
+import { parseFitnessMachineFeatures, type FitnessMachineFeatures, type TargetSettingFeatures } from '../protocol/ftms/features.js';
+import { parseIndoorBikeData, type IndoorBikeData } from '../protocol/ftms/indoor-bike-data.js';
+import { parseMachineStatus, type MachineStatus } from '../protocol/ftms/machine-status.js';
 import {
   parseSupportedHeartRateRange,
   parseSupportedInclinationRange,
@@ -29,13 +29,13 @@ import {
   parseSupportedSpeedRange,
   type SupportedRange,
   type SupportedResistanceLevelRange,
-} from '../protocol/ftms/supported-ranges';
-import { parseTrainingStatus, type TrainingStatus } from '../protocol/ftms/training-status';
-import { CHARACTERISTIC, SERVICE } from '../protocol/uuids';
-import type { BleCharacteristic, BlePeripheral, DeviceRequest } from '../transport/transport';
-import { BaseDevice, type BaseDeviceEvents, type BaseDeviceOptions, type ConnectionState } from './base-device';
-import { ControlPointClient } from './control-point-client';
-import type { DeviceInformation } from './device-information';
+} from '../protocol/ftms/supported-ranges.js';
+import { parseTrainingStatus, type TrainingStatus } from '../protocol/ftms/training-status.js';
+import { CHARACTERISTIC, SERVICE } from '../protocol/uuids.js';
+import type { BleCharacteristic, BlePeripheral, DeviceRequest } from '../transport/transport.js';
+import { BaseDevice, type BaseDeviceEvents, type BaseDeviceOptions, type ConnectionState } from './base-device.js';
+import { ControlPointClient } from './control-point-client.js';
+import type { DeviceInformation } from './device-information.js';
 
 export interface FtmsTrainerOptions extends BaseDeviceOptions {
   /** Request control after every (re)connect and before commands. Default true. */
@@ -81,7 +81,27 @@ export interface FtmsCapabilities {
     readonly machineStatus: boolean;
     readonly trainingStatus: boolean;
   };
-  /** The device also offers the Cycling Power Service (0x1818). */
+  /** The device also offers the Cycling Power Service (0x1818). `false` until {@link complete}. */
+  readonly hasCyclingPowerService: boolean;
+  /** Empty until {@link complete}. */
+  readonly deviceInformation: DeviceInformation;
+  /**
+   * `false` right after connecting: only the features (0x2ACC) and the
+   * characteristic list are known. Ranges, device information and the
+   * Cycling Power check are read after `ready` (they cost ~300 ms each on a
+   * real trainer); a second `capabilities` event follows with `complete: true`.
+   */
+  readonly complete: boolean;
+}
+
+/** Static values that do not change between reconnects to the same device. */
+interface DeviceDetails {
+  readonly peripheralId: string;
+  readonly powerRange?: SupportedRange;
+  readonly resistanceRange?: SupportedResistanceLevelRange;
+  readonly inclinationRange?: SupportedRange;
+  readonly speedRange?: SupportedRange;
+  readonly heartRateRange?: SupportedRange;
   readonly hasCyclingPowerService: boolean;
   readonly deviceInformation: DeviceInformation;
 }
@@ -182,6 +202,8 @@ export class FtmsTrainer extends BaseDevice<FtmsTrainerEvents> {
   #lastSimulation: IndoorBikeSimulationParameters = { ...DEFAULT_SIMULATION_PARAMETERS };
   #telemetry: TrainerTelemetry = {};
   #capabilities: FtmsCapabilities | undefined;
+  #details: DeviceDetails | undefined;
+  #readCharacteristic: ((uuid: number) => Promise<BleCharacteristic | undefined>) | undefined;
   #machineStatus: MachineStatus | undefined;
   #trainingStatus: TrainingStatus | undefined;
 
@@ -323,39 +345,18 @@ export class FtmsTrainer extends BaseDevice<FtmsTrainerEvents> {
     const machineStatus = await get(CHARACTERISTIC.fitnessMachineStatus);
     const trainingStatus = await get(CHARACTERISTIC.trainingStatus);
 
-    const read = async <T>(uuid: number, parse: (b: Uint8Array) => T): Promise<T | undefined> => {
-      const bytes = await this.tryReadValue(await get(uuid));
-      return bytes ? parse(bytes) : undefined;
+    const features = this.#parse(await this.tryReadValue(await get(CHARACTERISTIC.fitnessMachineFeature)), parseFitnessMachineFeatures);
+    this.#readCharacteristic = get;
+    const characteristics = {
+      indoorBikeData: bikeData !== undefined,
+      controlPoint: controlPoint !== undefined,
+      machineStatus: machineStatus !== undefined,
+      trainingStatus: trainingStatus !== undefined,
     };
-    const features = await read(CHARACTERISTIC.fitnessMachineFeature, parseFitnessMachineFeatures);
-    const powerRange = await read(CHARACTERISTIC.supportedPowerRange, parseSupportedPowerRange);
-    const resistanceRange = await read(CHARACTERISTIC.supportedResistanceLevelRange, parseSupportedResistanceLevelRange);
-    const inclinationRange = await read(CHARACTERISTIC.supportedInclinationRange, parseSupportedInclinationRange);
-    const speedRange = await read(CHARACTERISTIC.supportedSpeedRange, parseSupportedSpeedRange);
-    const heartRateRange = await read(CHARACTERISTIC.supportedHeartRateRange, parseSupportedHeartRateRange);
-    const trainingStatusValue = await this.tryReadValue(trainingStatus);
-
-    const deviceInformation = await this.readDeviceInformation(peripheral);
-    const hasCyclingPowerService = (await this.getService(peripheral, SERVICE.cyclingPower)) !== undefined;
-
-    this.#capabilities = {
-      ...(features ? { features } : {}),
-      ...(powerRange ? { powerRange } : {}),
-      ...(resistanceRange ? { resistanceRange } : {}),
-      ...(inclinationRange ? { inclinationRange } : {}),
-      ...(speedRange ? { speedRange } : {}),
-      ...(heartRateRange ? { heartRateRange } : {}),
-      characteristics: {
-        indoorBikeData: bikeData !== undefined,
-        controlPoint: controlPoint !== undefined,
-        machineStatus: machineStatus !== undefined,
-        trainingStatus: trainingStatus !== undefined,
-      },
-      hasCyclingPowerService,
-      deviceInformation,
-    };
-    this.emit('capabilities', this.#capabilities);
-    if (trainingStatusValue) this.#handleTrainingStatus(trainingStatusValue);
+    // Reconnect to the same device: the static details are still valid.
+    const details = this.#details?.peripheralId === peripheral.id ? this.#details : undefined;
+    this.#details = details;
+    this.#publishCapabilities(features, characteristics, details);
 
     // Subscribe to data first: if control is refused later, telemetry still flows.
     if (bikeData && this.#canNotify(bikeData)) await this.subscribe(bikeData, (b) => this.#handleBikeData(b));
@@ -378,18 +379,83 @@ export class FtmsTrainer extends BaseDevice<FtmsTrainerEvents> {
   }
 
   protected override async afterReady(context: { isReconnect: boolean }): Promise<void> {
-    if (!this.#autoRequestControl || !this.#controlPoint) return;
-    try {
-      await this.requestControl();
-    } catch {
-      return; // state is 'blocked' or 'none'; retry timer handles 'blocked'
+    if (this.#autoRequestControl && this.#controlPoint) {
+      try {
+        await this.requestControl();
+        if (context.isReconnect && this.#restoreOnReconnect) await this.#restoreMode();
+      } catch {
+        // state is 'blocked' or 'none'; the retry timer handles 'blocked'
+      }
     }
-    if (context.isReconnect && this.#restoreOnReconnect) await this.#restoreMode();
+    await this.#readDetails().catch((error: unknown) => {
+      if (this.isReady) this.reportError(error, 'Reading trainer details failed');
+    });
+  }
+
+  /** Ranges, training status, device information and the CPS check — after `ready`. */
+  async #readDetails(): Promise<void> {
+    const peripheral = this.peripheral;
+    const get = this.#readCharacteristic;
+    const current = this.#capabilities;
+    if (!peripheral || !get || !current) return;
+    const read = async <T>(uuid: number, parse: (b: Uint8Array) => T): Promise<T | undefined> =>
+      this.#parse(await this.tryReadValue(await get(uuid)), parse);
+
+    const trainingStatus = await this.tryReadValue(await get(CHARACTERISTIC.trainingStatus));
+    if (trainingStatus) this.#handleTrainingStatus(trainingStatus);
+    if (this.#details) return; // already known from an earlier session with this device
+
+    const powerRange = await read(CHARACTERISTIC.supportedPowerRange, parseSupportedPowerRange);
+    const resistanceRange = await read(CHARACTERISTIC.supportedResistanceLevelRange, parseSupportedResistanceLevelRange);
+    const inclinationRange = await read(CHARACTERISTIC.supportedInclinationRange, parseSupportedInclinationRange);
+    const speedRange = await read(CHARACTERISTIC.supportedSpeedRange, parseSupportedSpeedRange);
+    const heartRateRange = await read(CHARACTERISTIC.supportedHeartRateRange, parseSupportedHeartRateRange);
+    const deviceInformation = await this.readDeviceInformation(peripheral);
+    const hasCyclingPowerService = (await this.getService(peripheral, SERVICE.cyclingPower)) !== undefined;
+    if (!this.isReady || this.peripheral !== peripheral) return;
+
+    this.#details = {
+      peripheralId: peripheral.id,
+      ...(powerRange ? { powerRange } : {}),
+      ...(resistanceRange ? { resistanceRange } : {}),
+      ...(inclinationRange ? { inclinationRange } : {}),
+      ...(speedRange ? { speedRange } : {}),
+      ...(heartRateRange ? { heartRateRange } : {}),
+      hasCyclingPowerService,
+      deviceInformation,
+    };
+    this.#publishCapabilities(current.features, current.characteristics, this.#details);
+  }
+
+  #publishCapabilities(
+    features: FitnessMachineFeatures | undefined,
+    characteristics: FtmsCapabilities['characteristics'],
+    details: DeviceDetails | undefined,
+  ): void {
+    const { peripheralId: _id, ...rest } = details ?? { peripheralId: '', hasCyclingPowerService: false, deviceInformation: {} };
+    this.#capabilities = {
+      ...(features ? { features } : {}),
+      ...rest,
+      characteristics,
+      complete: details !== undefined,
+    };
+    this.emit('capabilities', this.#capabilities);
+  }
+
+  #parse<T>(bytes: Uint8Array | undefined, parse: (b: Uint8Array) => T): T | undefined {
+    if (!bytes) return undefined;
+    try {
+      return parse(bytes);
+    } catch (error) {
+      this.reportError(error, 'Parsing a static value failed');
+      return undefined;
+    }
   }
 
   protected sessionEnded(reason: OpenFtmsError): void {
     this.#controlPoint?.reset(reason);
     this.#controlPoint = undefined;
+    this.#readCharacteristic = undefined;
     this.#stopControlRetry();
     this.#setControl('none');
   }

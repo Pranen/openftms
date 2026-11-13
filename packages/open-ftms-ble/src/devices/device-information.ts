@@ -1,5 +1,5 @@
-import { CHARACTERISTIC, SERVICE } from '../protocol/uuids';
-import type { BleCharacteristic, BlePeripheral, BleService, BleUuid } from '../transport/transport';
+import { CHARACTERISTIC, SERVICE } from '../protocol/uuids.js';
+import type { BleCharacteristic, BlePeripheral, BleService, BleUuid } from '../transport/transport.js';
 
 /** Device Information Service (0x180A) strings; fields are absent if not offered. */
 export interface DeviceInformation {

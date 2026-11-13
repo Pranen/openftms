@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fromHex, hasParseIssues, parseHeartRateMeasurement } from '../src/index';
+import { fromHex, hasParseIssues, parseHeartRateMeasurement } from '../src/index.js';
 
 describe('parseHeartRateMeasurement (0x2A37)', () => {
   it('parses uint8 heart rate without contact support', () => {

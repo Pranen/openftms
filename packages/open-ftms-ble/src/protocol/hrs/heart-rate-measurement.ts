@@ -1,5 +1,5 @@
-import { ByteReader, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes';
-import { decodeFlags, put, reservedBits, type FlagSet } from '../util';
+import { ByteReader, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes.js';
+import { decodeFlags, put, reservedBits, type FlagSet } from '../util.js';
 
 /** Flag bits of Heart Rate Measurement (0x2A37), index = bit position. */
 export const HEART_RATE_FLAGS = [

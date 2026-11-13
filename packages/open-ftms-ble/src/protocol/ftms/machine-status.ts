@@ -1,6 +1,6 @@
-import { ByteReader, fromFixedPoint, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes';
-import { invert, put } from '../util';
-import { readSimulationParameters, type IndoorBikeSimulationParameters } from './control-point';
+import { ByteReader, fromFixedPoint, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes.js';
+import { invert, put } from '../util.js';
+import { readSimulationParameters, type IndoorBikeSimulationParameters } from './control-point.js';
 
 /** Fitness Machine Status (0x2ADA) op codes. */
 export const MACHINE_STATUS_OPCODE = {

@@ -1,4 +1,4 @@
-import { InvalidParameterError } from '../errors';
+import { InvalidParameterError } from '../errors.js';
 
 /** Anything a characteristic value can arrive as. */
 export type BytesLike = ArrayBuffer | ArrayBufferView | ArrayLike<number>;

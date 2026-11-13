@@ -1,6 +1,6 @@
-import { BluetoothUnavailableError, ConnectionError, UserCancelledError, wrapError } from '../errors';
-import type { Unsubscribe } from '../events/typed-emitter';
-import { normalizeUuid } from '../protocol/uuids';
+import { BluetoothUnavailableError, ConnectionError, UserCancelledError, wrapError } from '../errors.js';
+import type { Unsubscribe } from '../events/typed-emitter.js';
+import { normalizeUuid } from '../protocol/uuids.js';
 import type {
   BleCharacteristic,
   BlePeripheral,
@@ -9,7 +9,7 @@ import type {
   BleUuid,
   CharacteristicProperties,
   DeviceRequest,
-} from './transport';
+} from './transport.js';
 
 function isDomError(error: unknown, ...names: string[]): boolean {
   return error instanceof Error && names.includes(error.name);
@@ -20,8 +20,12 @@ export class WebBluetoothTransport implements BleTransport {
   readonly kind = 'web-bluetooth';
   readonly #bluetooth: Bluetooth | undefined;
 
-  constructor(bluetooth: Bluetooth | undefined = globalThis.navigator?.bluetooth) {
-    this.#bluetooth = bluetooth;
+  /**
+   * @param bluetooth defaults to `navigator.bluetooth`; pass a fake for tests.
+   *   Typed `unknown` so consumers need no `@types/web-bluetooth`.
+   */
+  constructor(bluetooth: unknown = globalThis.navigator?.bluetooth) {
+    this.#bluetooth = bluetooth as Bluetooth | undefined;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -108,6 +112,31 @@ class WebBluetoothPeripheral implements BlePeripheral {
       // NotFoundError: not offered. SecurityError: not in optionalServices / blocklisted.
       if (isDomError(error, 'NotFoundError', 'SecurityError')) return undefined;
       throw error;
+    }
+  }
+
+  async waitForAdvertisement(timeoutMs: number): Promise<boolean> {
+    const device = this.#device;
+    if (typeof device.watchAdvertisements !== 'function') return true; // cannot tell; just try
+    const abort = new AbortController();
+    try {
+      return await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), timeoutMs);
+        device.addEventListener(
+          'advertisementreceived',
+          () => {
+            clearTimeout(timer);
+            resolve(true);
+          },
+          { once: true, signal: abort.signal },
+        );
+        device.watchAdvertisements({ signal: abort.signal }).catch(() => {
+          clearTimeout(timer);
+          resolve(true); // watching unsupported/blocked: let connect() decide
+        });
+      });
+    } finally {
+      abort.abort();
     }
   }
 

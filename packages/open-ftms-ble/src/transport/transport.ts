@@ -1,4 +1,4 @@
-import type { Unsubscribe } from '../events/typed-emitter';
+import type { Unsubscribe } from '../events/typed-emitter.js';
 
 /**
  * Transport abstraction: a thin, promise-based mirror of the Web Bluetooth GATT
@@ -44,6 +44,13 @@ export interface BlePeripheral {
   /** `undefined` if the device does not offer the service. */
   getService(uuid: BleUuid): Promise<BleService | undefined>;
   onDisconnected(listener: () => void): Unsubscribe;
+  /**
+   * Resolves `true` once the device advertises (it is switched on and in
+   * range), `false` after `timeoutMs`. Optional: transports without
+   * advertisement support omit it. Web Bluetooth needs this before
+   * connecting to a device from `getKnownDevices()` on some platforms.
+   */
+  waitForAdvertisement?(timeoutMs: number): Promise<boolean>;
 }
 
 export interface BleService {

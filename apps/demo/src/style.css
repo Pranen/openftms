@@ -482,6 +482,13 @@ h4 {
   font-family: var(--mono);
 }
 
+progress {
+  width: 100%;
+  height: 10px;
+  margin: 6px 0 2px;
+  accent-color: var(--accent);
+}
+
 .list li.ok {
   color: var(--ok);
 }

@@ -18,7 +18,7 @@ import {
   fromHex,
   parseControlPointResponse,
   toHex,
-} from '../src/index';
+} from '../src/index.js';
 
 describe('control point encoders (0x2AD9)', () => {
   it('encodes parameterless commands', () => {

@@ -1,4 +1,4 @@
-import { ByteReader, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes';
+import { ByteReader, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes.js';
 
 /** A supported range (0x2AD4 … 0x2AD8). Values are `undefined` if truncated. */
 export interface SupportedRange {

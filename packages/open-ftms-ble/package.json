@@ -1,8 +1,22 @@
 {
   "name": "open-ftms-ble",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Zero-dependency Web Bluetooth library for FTMS fitness machines (e.g. Tacx Flux 2) and BLE heart-rate monitors",
+  "keywords": [
+    "ftms",
+    "web-bluetooth",
+    "bluetooth",
+    "smart-trainer",
+    "indoor-bike",
+    "heart-rate",
+    "tacx"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pranen/openftms.git",
+    "directory": "packages/open-ftms-ble"
+  },
   "license": "UNLICENSED",
   "type": "module",
   "sideEffects": false,
@@ -15,13 +29,15 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "@types/web-bluetooth": "^0.0.22",

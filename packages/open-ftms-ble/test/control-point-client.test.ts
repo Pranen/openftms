@@ -7,7 +7,7 @@ import {
   delay,
   encodeSetTargetPower,
   toHex,
-} from '../src/index';
+} from '../src/index.js';
 
 /** Fake trainer: records writes and answers each op code after `latency` ms. */
 function setup(answer: (op: number) => number | undefined = () => 0x01, latency = 2) {

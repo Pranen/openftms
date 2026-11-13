@@ -1,8 +1,8 @@
-import { ConnectionError, UserCancelledError } from '../errors';
-import type { Unsubscribe } from '../events/typed-emitter';
-import { toBytes, type BytesLike } from '../protocol/bytes';
-import { normalizeUuid } from '../protocol/uuids';
-import { delay } from '../util/async';
+import { ConnectionError, UserCancelledError } from '../errors.js';
+import type { Unsubscribe } from '../events/typed-emitter.js';
+import { toBytes, type BytesLike } from '../protocol/bytes.js';
+import { normalizeUuid } from '../protocol/uuids.js';
+import { delay } from '../util/async.js';
 import type {
   BleCharacteristic,
   BlePeripheral,
@@ -11,7 +11,7 @@ import type {
   BleUuid,
   CharacteristicProperties,
   DeviceRequest,
-} from './transport';
+} from './transport.js';
 
 /**
  * In-memory BLE transport for tests, demos and games without hardware.
@@ -94,6 +94,15 @@ export class MockPeripheral implements BlePeripheral {
       for (const c of service.characteristics.values()) c.notifying = false;
     }
     for (const l of [...this.#disconnectListeners]) l();
+  }
+
+  /** Whether the device "advertises" (is switched on and in range). Default true. */
+  advertising = true;
+
+  async waitForAdvertisement(timeoutMs: number): Promise<boolean> {
+    if (this.advertising) return true;
+    await delay(timeoutMs);
+    return this.advertising;
   }
 
   /** Simulates an unexpected link loss (same effect as a remote disconnect). */

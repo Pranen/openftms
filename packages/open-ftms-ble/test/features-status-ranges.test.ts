@@ -9,7 +9,7 @@ import {
   parseSupportedResistanceLevelRange,
   parseSupportedSpeedRange,
   parseTrainingStatus,
-} from '../src/index';
+} from '../src/index.js';
 
 describe('parseFitnessMachineFeatures (0x2ACC)', () => {
   it('decodes machine and target-setting feature bits', () => {

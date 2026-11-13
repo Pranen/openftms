@@ -1,4 +1,4 @@
-import type { ControlPointResponse } from './protocol/ftms/control-point';
+import type { ControlPointResponse } from './protocol/ftms/control-point.js';
 
 /** Base class for every error thrown by open-ftms-ble. */
 export class OpenFtmsError extends Error {

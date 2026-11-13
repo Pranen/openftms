@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHARACTERISTIC, SERVICE, toFullUuid, uuidName } from '../src/index';
+import { CHARACTERISTIC, SERVICE, toFullUuid, uuidName } from '../src/index.js';
 
 describe('uuids', () => {
   it('expands 16-bit UUIDs', () => {

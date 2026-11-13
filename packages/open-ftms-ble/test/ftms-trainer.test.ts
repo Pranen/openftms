@@ -9,7 +9,7 @@ import {
   SimulatedTrainer,
   type ConnectionState,
   type FtmsTrainerOptions,
-} from '../src/index';
+} from '../src/index.js';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -103,9 +103,12 @@ describe('FtmsTrainer', () => {
   it('degrades to data-only when another app holds control, and retries', async () => {
     const { trainer, sim } = create();
     sim.controlHeldByOtherApp = true;
+    const controlStates: string[] = [];
+    trainer.on('controlStateChange', (e) => controlStates.push(e.state));
     await trainer.connect();
     expect(trainer.connectionState).toBe('ready');
-    expect(trainer.control).toBe('blocked');
+    expect(controlStates.slice(0, 2)).toEqual(['requesting', 'blocked']);
+    expect(trainer.control).not.toBe('granted');
     await vi.waitFor(() => expect(trainer.telemetry.powerW).toBeDefined());
     sim.controlHeldByOtherApp = false;
     await vi.waitFor(() => expect(trainer.control).toBe('granted'));
@@ -197,6 +200,62 @@ describe('FtmsTrainer', () => {
     expect(sim.mode).toEqual({ kind: 'none' });
     await vi.waitFor(() => expect(trainer.control).toBe('granted'));
   });
+  it('retries connect and discovery when the link drops during setup', async () => {
+    const { trainer, sim, states } = create({}, { latencyMs: 5 });
+    let first = true;
+    sim.peripheral.onConnected(() => {
+      if (!first) return;
+      first = false;
+      setTimeout(() => sim.peripheral.simulateConnectionLoss(), 2); // during service discovery
+    });
+    const errors: string[] = [];
+    trainer.on('error', (e) => errors.push(e.message));
+    await trainer.connect();
+    expect(trainer.connectionState).toBe('ready');
+    expect(states.slice(0, 4)).toEqual(['connecting', 'discovering', 'connecting', 'discovering']);
+    expect(errors.some((m) => m.includes('retrying'))).toBe(true);
+    await expect.poll(() => trainer.control).toBe('granted');
+  });
+
+  it('is ready before ranges and device information are read, and reuses them on reconnect', async () => {
+    const { trainer, sim } = create();
+    const order: string[] = [];
+    const complete: boolean[] = [];
+    trainer.on('connectionStateChange', (e) => e.state === 'ready' && order.push('ready'));
+    trainer.on('gattOperation', (t) => t.label.startsWith('read ') && order.push(t.label));
+    trainer.on('capabilities', (c) => complete.push(c.complete));
+    await trainer.connect();
+    expect(order.indexOf('ready')).toBeGreaterThan(order.indexOf('read fitnessMachineFeature'));
+    expect(order.indexOf('ready')).toBeLessThan(order.indexOf('read supportedPowerRange'));
+    expect(order.indexOf('ready')).toBeLessThan(order.indexOf('read manufacturerName'));
+    expect(complete).toEqual([false, true]);
+    expect(trainer.capabilities?.powerRange?.maximum).toBe(2000);
+    expect(trainer.capabilities?.deviceInformation.manufacturerName).toBe('open-ftms');
+
+    order.length = 0;
+    sim.simulateConnectionLoss();
+    await expect.poll(() => trainer.connectionState).toBe('ready');
+    await expect.poll(() => trainer.control).toBe('granted');
+    expect(order).not.toContain('read manufacturerName');
+    expect(order).not.toContain('read supportedPowerRange');
+    expect(trainer.capabilities?.complete).toBe(true);
+    expect(trainer.capabilities?.powerRange?.maximum).toBe(2000);
+  });
+
+  it('connects to a known device without the chooser', async () => {
+    const { trainer, sim } = create();
+    await expect(trainer.connectKnown('unknown-id')).resolves.toBe(false);
+    expect(trainer.connectionState).toBe('disconnected');
+
+    sim.peripheral.advertising = false;
+    await expect(trainer.connectKnown(sim.peripheral.id, { advertisementTimeoutMs: 10 })).rejects.toBeInstanceOf(
+      ConnectionError,
+    );
+
+    sim.peripheral.advertising = true;
+    await expect(trainer.connectKnown(sim.peripheral.id)).resolves.toBe(true);
+    expect(trainer.connectionState).toBe('ready');
+  });
 });
 
 describe('HeartRateMonitor', () => {
@@ -209,22 +268,5 @@ describe('HeartRateMonitor', () => {
     expect(hrm.snapshot.sensorContact).toBe('detected');
     expect(hrm.snapshot.bodySensorLocation).toBe('chest');
     expect(hrm.snapshot.rrIntervalsMs?.length).toBe(1);
-  });
-
-  it('retries connect and discovery when the link drops during setup', async () => {
-    const { trainer, sim, states } = create({}, { latencyMs: 5 });
-    let first = true;
-    sim.peripheral.onConnected(() => {
-      if (!first) return;
-      first = false;
-      setTimeout(() => sim.peripheral.simulateConnectionLoss(), 12); // in the middle of discovery
-    });
-    const errors: string[] = [];
-    trainer.on('error', (e) => errors.push(e.message));
-    await trainer.connect();
-    expect(trainer.connectionState).toBe('ready');
-    expect(states.slice(0, 4)).toEqual(['connecting', 'discovering', 'connecting', 'discovering']);
-    expect(errors.some((m) => m.includes('retrying'))).toBe(true);
-    await expect.poll(() => trainer.control).toBe('granted');
   });
 });

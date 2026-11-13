@@ -1,9 +1,9 @@
-import { ConnectionError, type OpenFtmsError } from '../errors';
-import { parseHeartRateMeasurement, type HeartRateMeasurement, type SensorContact } from '../protocol/hrs/heart-rate-measurement';
-import { CHARACTERISTIC, SERVICE } from '../protocol/uuids';
-import type { BlePeripheral, DeviceRequest } from '../transport/transport';
-import { BaseDevice, type BaseDeviceEvents, type BaseDeviceOptions, type ConnectionState } from './base-device';
-import type { DeviceInformation } from './device-information';
+import { ConnectionError, type OpenFtmsError } from '../errors.js';
+import { parseHeartRateMeasurement, type HeartRateMeasurement, type SensorContact } from '../protocol/hrs/heart-rate-measurement.js';
+import { CHARACTERISTIC, SERVICE } from '../protocol/uuids.js';
+import type { BlePeripheral, DeviceRequest } from '../transport/transport.js';
+import { BaseDevice, type BaseDeviceEvents, type BaseDeviceOptions, type ConnectionState } from './base-device.js';
+import type { DeviceInformation } from './device-information.js';
 
 export const BODY_SENSOR_LOCATIONS = ['other', 'chest', 'wrist', 'finger', 'hand', 'earLobe', 'foot'] as const;
 export type BodySensorLocation = (typeof BODY_SENSOR_LOCATIONS)[number] | 'unknown';

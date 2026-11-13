@@ -1,4 +1,4 @@
-import { TimeoutError } from '../errors';
+import { TimeoutError } from '../errors.js';
 
 export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

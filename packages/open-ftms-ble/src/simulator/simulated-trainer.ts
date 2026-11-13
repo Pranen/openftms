@@ -1,4 +1,4 @@
-import { ByteReader, ByteWriter } from '../protocol/bytes';
+import { ByteReader, ByteWriter } from '../protocol/bytes.js';
 import {
   CONTROL_POINT_OPCODE as OP,
   CONTROL_POINT_RESULT as RESULT,
@@ -6,11 +6,11 @@ import {
   readSimulationParameters,
   writeSimulationParameters,
   type IndoorBikeSimulationParameters,
-} from '../protocol/ftms/control-point';
-import { MACHINE_STATUS_OPCODE as STATUS } from '../protocol/ftms/machine-status';
-import { TRAINING_STATUS } from '../protocol/ftms/training-status';
-import { CHARACTERISTIC, SERVICE } from '../protocol/uuids';
-import { MockPeripheral, type MockCharacteristic } from '../transport/mock-transport';
+} from '../protocol/ftms/control-point.js';
+import { MACHINE_STATUS_OPCODE as STATUS } from '../protocol/ftms/machine-status.js';
+import { TRAINING_STATUS } from '../protocol/ftms/training-status.js';
+import { CHARACTERISTIC, SERVICE } from '../protocol/uuids.js';
+import { MockPeripheral, type MockCharacteristic } from '../transport/mock-transport.js';
 
 export interface SimulatedTrainerOptions {
   name?: string;

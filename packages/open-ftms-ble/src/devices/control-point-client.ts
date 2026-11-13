@@ -1,9 +1,9 @@
-import { ControlPointError, OpenFtmsError, TimeoutError } from '../errors';
+import { ControlPointError, OpenFtmsError, TimeoutError } from '../errors.js';
 import {
   controlPointOpCodeName,
   parseControlPointResponse,
   type ControlPointResponse,
-} from '../protocol/ftms/control-point';
+} from '../protocol/ftms/control-point.js';
 
 interface Waiter {
   resolve: (response: ControlPointResponse) => void;

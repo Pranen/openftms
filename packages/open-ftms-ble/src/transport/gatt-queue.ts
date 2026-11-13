@@ -1,5 +1,5 @@
-import { ConnectionError } from '../errors';
-import { withTimeout } from '../util/async';
+import { ConnectionError } from '../errors.js';
+import { withTimeout } from '../util/async.js';
 
 /** Timing of one settled GATT operation (queue wait excluded). */
 export interface GattOperationTrace {

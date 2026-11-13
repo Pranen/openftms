@@ -1,5 +1,5 @@
-import { ByteReader, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes';
-import { decodeFlags, invert, reservedBits, type FlagSet } from '../util';
+import { ByteReader, toBytes, type BytesLike, type ParseDiagnostics } from '../bytes.js';
+import { decodeFlags, invert, reservedBits, type FlagSet } from '../util.js';
 
 export const TRAINING_STATUS_FLAGS = ['trainingStatusStringPresent', 'extendedStringPresent'] as const;
 

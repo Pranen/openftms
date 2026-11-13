@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fromHex, hasParseIssues, parseMachineStatus } from '../src/index';
+import { fromHex, hasParseIssues, parseMachineStatus } from '../src/index.js';
 
 describe('parseMachineStatus (0x2ADA)', () => {
   it('detects control permission lost', () => {

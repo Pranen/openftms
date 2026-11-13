@@ -7,7 +7,7 @@ import {
   toBytes,
   toFixedPoint,
   toHex,
-} from '../src/index';
+} from '../src/index.js';
 
 describe('toBytes', () => {
   it('respects byteOffset/byteLength of a DataView', () => {

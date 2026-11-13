@@ -5,8 +5,8 @@ import {
   toFixedPoint,
   type BytesLike,
   type ParseDiagnostics,
-} from '../bytes';
-import { invert } from '../util';
+} from '../bytes.js';
+import { invert } from '../util.js';
 
 /** Fitness Machine Control Point (0x2AD9) op codes. */
 export const CONTROL_POINT_OPCODE = {

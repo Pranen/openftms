@@ -5,15 +5,15 @@ import {
   OpenFtmsError,
   TimeoutError,
   wrapError,
-} from '../errors';
-import { TypedEmitter, type Unsubscribe } from '../events/typed-emitter';
-import { toBytes, toHex } from '../protocol/bytes';
-import { uuidName } from '../protocol/uuids';
-import { GattQueue, type GattOperationTrace } from '../transport/gatt-queue';
-import type { BleCharacteristic, BlePeripheral, BleService, BleTransport, BleUuid, DeviceRequest } from '../transport/transport';
-import { WebBluetoothTransport } from '../transport/web-bluetooth';
-import { delay, withTimeout } from '../util/async';
-import { readDeviceInformation, type DeviceInformation } from './device-information';
+} from '../errors.js';
+import { TypedEmitter, type Unsubscribe } from '../events/typed-emitter.js';
+import { toBytes, toHex } from '../protocol/bytes.js';
+import { uuidName } from '../protocol/uuids.js';
+import { GattQueue, type GattOperationTrace } from '../transport/gatt-queue.js';
+import type { BleCharacteristic, BlePeripheral, BleService, BleTransport, BleUuid, DeviceRequest } from '../transport/transport.js';
+import { WebBluetoothTransport } from '../transport/web-bluetooth.js';
+import { delay, withTimeout } from '../util/async.js';
+import { readDeviceInformation, type DeviceInformation } from './device-information.js';
 
 /**
  * ```
@@ -52,6 +52,8 @@ export interface BaseDeviceOptions {
 /** One packet on the wire, for logging and debugging. */
 export interface RawPacket {
   readonly direction: 'in' | 'out';
+  /** `read` and `notification` (incl. indications) are incoming, `write` is outgoing. */
+  readonly kind: 'read' | 'notification' | 'write';
   /** Lowercase 128-bit UUID. */
   readonly uuid: string;
   /** Known characteristic name, or the UUID. */
@@ -184,6 +186,32 @@ export abstract class BaseDevice<E extends BaseDeviceEvents> extends TypedEmitte
     }
   }
 
+  /**
+   * Connects to a device the user already picked in an earlier visit, without
+   * the chooser (and without a user gesture). Store `trainer.peripheral.id`
+   * after a successful {@link connect} and pass it here next time.
+   *
+   * Returns `false` if the browser does not know the device (permission not
+   * persisted, or `getDevices()` unsupported) — fall back to {@link connect}
+   * from a click handler then. Throws a ConnectionError if the device does
+   * not advertise within `advertisementTimeoutMs` (switched off, out of range)
+   * or the connection fails.
+   */
+  async connectKnown(id: string, options: { advertisementTimeoutMs?: number } = {}): Promise<boolean> {
+    if (this.#state !== 'disconnected') {
+      throw new ConnectionError(`Cannot connect while ${this.#state}`);
+    }
+    const known = await this.transport.getKnownDevices();
+    const peripheral = known.find((p) => p.id === id);
+    if (!peripheral) return false;
+    if (peripheral.waitForAdvertisement) {
+      const seen = await peripheral.waitForAdvertisement(options.advertisementTimeoutMs ?? 10_000);
+      if (!seen) throw new ConnectionError('Device not found: it is not advertising (switched off or out of range?)');
+    }
+    await this.connect(peripheral);
+    return true;
+  }
+
   /** User-initiated disconnect; never triggers a reconnect. */
   async disconnect(): Promise<void> {
     this.#userDisconnect = true;
@@ -238,7 +266,7 @@ export abstract class BaseDevice<E extends BaseDeviceEvents> extends TypedEmitte
     try {
       const value = await this.gatt.run(`read ${name}`, () => characteristic.read(), this.operationTimeoutMs);
       const bytes = toBytes(value);
-      this.#emitRaw('in', characteristic, bytes);
+      this.#emitRaw('in', 'read', characteristic, bytes);
       return bytes;
     } catch (error) {
       throw wrapError(GattOperationError, `Reading ${name} failed`, error);
@@ -270,7 +298,7 @@ export abstract class BaseDevice<E extends BaseDeviceEvents> extends TypedEmitte
 
   protected async writeValue(characteristic: BleCharacteristic, bytes: Uint8Array, withResponse = true): Promise<void> {
     const name = this.#nameOf(characteristic);
-    this.#emitRaw('out', characteristic, bytes);
+    this.#emitRaw('out', 'write', characteristic, bytes);
     try {
       await this.gatt.run(`write ${name}`, () => characteristic.write(bytes, withResponse), this.operationTimeoutMs);
     } catch (error) {
@@ -283,7 +311,7 @@ export abstract class BaseDevice<E extends BaseDeviceEvents> extends TypedEmitte
     const name = this.#nameOf(characteristic);
     const off = characteristic.onValue((value) => {
       const bytes = toBytes(value);
-      this.#emitRaw('in', characteristic, bytes);
+      this.#emitRaw('in', 'notification', characteristic, bytes);
       try {
         handler(bytes);
       } catch (error) {
@@ -441,9 +469,10 @@ export abstract class BaseDevice<E extends BaseDeviceEvents> extends TypedEmitte
     return uuidName(characteristic.uuid) ?? characteristic.uuid;
   }
 
-  #emitRaw(direction: 'in' | 'out', characteristic: BleCharacteristic, bytes: Uint8Array): void {
+  #emitRaw(direction: 'in' | 'out', kind: RawPacket['kind'], characteristic: BleCharacteristic, bytes: Uint8Array): void {
     this.emitBase('raw', {
       direction,
+      kind,
       uuid: characteristic.uuid,
       characteristic: this.#nameOf(characteristic),
       bytes,

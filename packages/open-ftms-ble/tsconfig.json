@@ -2,7 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "types": ["web-bluetooth"],
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "open-ftms-ble": ["./src/index.ts"]
+    }
   },
-  "include": ["src", "test", "vitest.config.ts"]
+  "include": ["src", "test", "examples", "vitest.config.ts"]
 }
