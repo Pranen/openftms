@@ -84,7 +84,10 @@ letzte Ziel gesetzt.
 - **Unsinnige Werte nach dem Widerstandsfeld:** Manche Trainer senden das
   Widerstandsfeld als 1 Byte statt 2. Dann
   `new FtmsTrainer({ resistanceLevelEncoding: 'uint8' })` setzen. Den Flux 2
-  betrifft das nicht, er sendet das Feld gar nicht.
+  betrifft das nicht: Er sendet das Feld nur im Widerstandsmodus, als 2 Byte.
+- **Widerstandswert ist 10× zu gross:** Der Flux 2 meldet in Indoor Bike Data
+  den Rohwert in Zehnteln (Ziel 18,6 → `telemetry.resistanceLevel` 186).
+  Die Bibliothek gibt den Wert unverändert weiter, wie ihn das Gerät sendet.
 
 ## Pulsgurt zeigt «contact: notDetected»
 

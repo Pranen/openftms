@@ -54,6 +54,9 @@ describe('Tacx Flux 2 recordings', () => {
     expect(d.instantaneousPowerW).toBe(9);
     expect(d.resistanceLevel).toBeUndefined();
     expect(d.totalDistanceM).toBeUndefined();
+    const resistance = parseIndoorBikeData(fromHex(FLUX.indoorBikeData.resistanceMode));
+    expect(resistance.resistanceLevel).toBe(186); // sint16, raw = target 18.6 × 10
+    expect(resistance.instantaneousPowerW).toBe(0);
     for (const hex of Object.values(FLUX.indoorBikeData)) {
       const parsed = parseIndoorBikeData(fromHex(hex));
       expect(parsed.diagnostics.truncated).toBe(false);
