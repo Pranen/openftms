@@ -256,6 +256,23 @@ describe('FtmsTrainer', () => {
     await expect(trainer.connectKnown(sim.peripheral.id)).resolves.toBe(true);
     expect(trainer.connectionState).toBe('ready');
   });
+
+  it('reports the resistance level in the unit of setResistanceLevel', async () => {
+    const { trainer } = create();
+    await trainer.connect();
+    await trainer.setResistanceLevel(18.6);
+    await expect.poll(() => trainer.telemetry.resistanceLevel).toBe(18.6);
+  });
+
+  it('honours an explicit resistanceLevelScale', async () => {
+    const { trainer } = create({ resistanceLevelScale: 1 });
+    const raw: number[] = [];
+    trainer.on('indoorBikeData', (d) => d.resistanceLevel !== undefined && raw.push(d.resistanceLevel));
+    await trainer.connect();
+    await trainer.setResistanceLevel(18.6);
+    await expect.poll(() => trainer.telemetry.resistanceLevel).toBe(186);
+    expect(raw).toContain(186);
+  });
 });
 
 describe('HeartRateMonitor', () => {

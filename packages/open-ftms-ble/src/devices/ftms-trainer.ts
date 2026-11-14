@@ -50,6 +50,13 @@ export interface FtmsTrainerOptions extends BaseDeviceOptions {
   clampToSupportedRange?: boolean;
   /** Width of the Resistance Level field in Indoor Bike Data. Default `sint16`. */
   resistanceLevelEncoding?: 'sint16' | 'uint8';
+  /**
+   * Factor from the raw Indoor Bike Data Resistance Level to
+   * `telemetry.resistanceLevel`, so it matches {@link FtmsTrainer.setResistanceLevel}.
+   * Default: 0.1 for `sint16` (the Tacx Flux 2 sends tenths: target 18.6 → 186),
+   * 1 for `uint8`. `indoorBikeData.resistanceLevel` always stays raw.
+   */
+  resistanceLevelScale?: number;
   /** Wire format for Set Target Resistance Level. Default `sint16`. */
   targetResistanceEncoding?: ResistanceEncoding;
 }
@@ -115,6 +122,7 @@ export interface TrainerTelemetry {
   powerW?: number;
   averagePowerW?: number;
   totalDistanceM?: number;
+  /** Same unit as `setResistanceLevel()` (see `resistanceLevelScale`). */
   resistanceLevel?: number;
   totalEnergyKcal?: number | null;
   energyPerHourKcal?: number | null;
@@ -192,6 +200,7 @@ export class FtmsTrainer extends BaseDevice<FtmsTrainerEvents> {
   readonly #commandTimeoutMs: number;
   readonly #clampToRange: boolean;
   readonly #resistanceLevelEncoding: 'sint16' | 'uint8';
+  readonly #resistanceLevelScale: number;
   readonly #targetResistanceEncoding: ResistanceEncoding;
 
   #controlPoint: ControlPointClient | undefined;
@@ -215,6 +224,7 @@ export class FtmsTrainer extends BaseDevice<FtmsTrainerEvents> {
     this.#commandTimeoutMs = options.commandTimeoutMs ?? 3_000;
     this.#clampToRange = options.clampToSupportedRange ?? true;
     this.#resistanceLevelEncoding = options.resistanceLevelEncoding ?? 'sint16';
+    this.#resistanceLevelScale = options.resistanceLevelScale ?? (this.#resistanceLevelEncoding === 'sint16' ? 0.1 : 1);
     this.#targetResistanceEncoding = options.targetResistanceEncoding ?? 'sint16';
   }
 
@@ -562,6 +572,10 @@ export class FtmsTrainer extends BaseDevice<FtmsTrainerEvents> {
     for (const [from, to] of TELEMETRY_FIELDS) {
       const value = data[from];
       if (value !== undefined) (next as Record<string, unknown>)[to] = value;
+    }
+    if (data.resistanceLevel !== undefined) {
+      // Same unit as setResistanceLevel(); rounded to drop float noise (186 × 0.1).
+      next.resistanceLevel = Math.round(data.resistanceLevel * this.#resistanceLevelScale * 1000) / 1000;
     }
     this.#telemetry = next;
     this.emit('indoorBikeData', data);

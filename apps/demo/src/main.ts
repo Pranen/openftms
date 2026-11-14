@@ -254,7 +254,8 @@ const render = rafThrottle(() => {
     metric('Distanz', t.totalDistanceM !== undefined ? num(t.totalDistanceM / 1000, 2) : '–', 'km'),
     metric('Zeit', duration(t.elapsedTimeS)),
     metric('Datenrate', num(log.rate('indoorBikeData'), 1), 'Hz'),
-    metric('Modus', modeLabel(trainer.mode)),
+    ...(t.resistanceLevel !== undefined ? [metric('Widerstand', num(t.resistanceLevel, 1))] : []),
+    metric('Modus', modeLabel(trainer.mode)), // last: styled smaller
   );
 
   // Indoor Bike Data

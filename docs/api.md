@@ -60,6 +60,7 @@ Zusätzlich zu den [gemeinsamen Optionen](#optionen):
 | `commandTimeoutMs` | `3000` | Wartezeit auf die Antwort des Control Points |
 | `clampToSupportedRange` | `true` | Ziele auf den vom Trainer gemeldeten Bereich begrenzen |
 | `resistanceLevelEncoding` | `'sint16'` | Breite des Widerstandsfelds in Indoor Bike Data (`'uint8'` für manche Geräte) |
+| `resistanceLevelScale` | `0.1` bei `sint16`, `1` bei `uint8` | Umrechnung des gemeldeten Widerstands in `telemetry.resistanceLevel`, damit er dieselbe Einheit hat wie `setResistanceLevel()` (der Flux 2 meldet Zehntel). `indoorBikeData.resistanceLevel` bleibt der Rohwert |
 | `targetResistanceEncoding` | `'sint16'` | Format von «Set Target Resistance Level» |
 
 ### Befehle

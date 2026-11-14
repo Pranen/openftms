@@ -177,13 +177,16 @@ export class SimulatedTrainer {
     this.#distanceM += (speedKmh / 3.6) * dt;
     this.#elapsedS += dt;
 
+    // Like the Tacx Flux 2: the Resistance Level field (bit 5) only in resistance
+    // mode, as sint16 in tenths (level 18.6 → 186).
+    const mode = this.#mode;
     const w = new ByteWriter()
-      .uint16(0x0854) // speed (bit 0 clear), cadence, total distance, power, elapsed time
+      .uint16(mode.kind === 'resistance' ? 0x0874 : 0x0854) // speed (bit 0 clear), cadence, distance, [resistance], power, elapsed time
       .uint16(Math.round(speedKmh * 100))
       .uint16(Math.round(cadence * 2))
-      .uint24(Math.round(this.#distanceM) & 0xffffff)
-      .sint16(Math.round(this.#powerW))
-      .uint16(Math.round(this.#elapsedS) & 0xffff);
+      .uint24(Math.round(this.#distanceM) & 0xffffff);
+    if (mode.kind === 'resistance') w.sint16(Math.round(mode.level * 10));
+    w.sint16(Math.round(this.#powerW)).uint16(Math.round(this.#elapsedS) & 0xffff);
     this.#bikeData.notify(w.toBytes());
   }
 
