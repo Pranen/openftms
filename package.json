@@ -1,6 +1,7 @@
 {
   "name": "open-ftms",
   "private": true,
+  "license": "MIT",
   "description": "Monorepo: open-ftms-ble library (Web Bluetooth FTMS/HRS) and demo harness",
   "type": "module",
   "workspaces": [

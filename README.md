@@ -69,3 +69,7 @@ npm pack -w open-ftms-ble   # tarball for other projects: npm install ./open-ftm
 Web Bluetooth works in Chromium browsers only (Chrome, Edge) and needs a secure
 context (`https://` or `localhost`). On Windows, do not pair the trainer in the
 OS Bluetooth settings.
+
+## License
+
+[MIT](LICENSE)
