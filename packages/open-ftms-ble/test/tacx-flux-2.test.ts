@@ -9,7 +9,10 @@ import {
   parseControlPointResponse,
   parseFitnessMachineFeatures,
   parseHeartRateMeasurement,
+  encodeSetTargetPower,
   parseIndoorBikeData,
+  parseMachineStatus,
+  toHex,
   parseSupportedPowerRange,
   parseSupportedResistanceLevelRange,
 } from '../src/index.js';
@@ -56,6 +59,13 @@ describe('Tacx Flux 2 recordings', () => {
       expect(parsed.diagnostics.truncated).toBe(false);
       expect(parsed.diagnostics.trailingBytes).toBe(0);
     }
+  });
+
+  it('matches the recorded ERG exchange', () => {
+    const erg = FLUX.setTargetPower120;
+    expect(toHex(encodeSetTargetPower(120))).toBe(erg.write);
+    expect(parseMachineStatus(fromHex(erg.machineStatus))).toMatchObject({ type: 'targetPowerChanged', targetPowerW: 120 });
+    expect(parseControlPointResponse(fromHex(erg.response))).toMatchObject({ request: 'setTargetPower', success: true });
   });
 
   it('parses the control point and heart-rate packets', () => {

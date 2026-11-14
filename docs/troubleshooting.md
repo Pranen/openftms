@@ -27,17 +27,32 @@ Schliesst oder trennt ein Tab, ist die Verbindung für alle weg. Die Bibliothek
 versucht es inzwischen automatisch nochmals (`connectRetries`, Standard 2).
 Sauberer ist es trotzdem, nur einen Tab offen zu haben.
 
+## «GATT operation failed for unknown reason» und Verbinden klappt erst nach Minuten
+
+Gesehen am 14.11.2026: Mehrere Versuche hintereinander scheiterten. Lese- und
+Abonnier-Operationen schlugen nach 6–40 ms fehl statt nach den üblichen
+~300 ms, oder die Verbindung riss während der Service-Suche ab.
+
+Dieses Muster deutet darauf hin, dass **ein anderes Gerät mit dem Trainer
+verbunden ist**, zum Beispiel eine Garmin-Uhr mit dem Flux als Sensor oder die
+Tacx-App auf dem Handy. Die Verbindung klappte, nachdem die Uhr ihre Aktivität
+bzw. den Puls-Broadcast beendet hatte.
+
+- Alle anderen Apps und Geräte vom Trainer trennen und es erneut versuchen.
+- Die Bibliothek wiederholt Verbinden plus Service-Suche bis zu zweimal, mit
+  wachsender Pause (0,6 s, dann 1,2 s).
+
 ## Verbinden dauert 5 bis 8 Sekunden
 
 Das ist normal. Gemessen am Flux 2 unter Windows:
 
 | Schritt | Dauer |
 |---|---|
-| Erste Service-Suche (Windows liest die ganze GATT-Datenbank) | 4,5–5 s |
+| Erste Service-Suche (Windows liest die ganze GATT-Datenbank) | 3,3–5 s |
 | Jede weitere Lese- oder Abonnier-Operation | ~300 ms (Verbindungsintervall des Flux) |
 
 Die Bibliothek erledigt vor «bereit» nur das Nötigste: Features lesen, Daten
-und Control Point abonnieren. Bereiche, Geräteinfo und die Prüfung auf den
+und Control Point abonnieren. Damit ist der Flux nach etwa 5,8 s bereit (vorher 7,7 s). Bereiche, Geräteinfo und die Prüfung auf den
 Cycling Power Service folgen danach. Beim Reconnect zum selben Gerät werden
 sie nicht nochmals gelesen.
 

@@ -369,7 +369,8 @@ export abstract class BaseDevice<E extends BaseDeviceEvents> extends TypedEmitte
           } catch {
             // ignore
           }
-          await delay(this.#connectRetryDelayMs);
+          // Growing pause: a trainer that just dropped the link often needs a moment.
+          await delay(this.#connectRetryDelayMs * 2 ** attempt);
         }
       }
     } finally {

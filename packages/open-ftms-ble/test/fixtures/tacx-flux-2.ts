@@ -24,6 +24,16 @@ export const TACX_FLUX_2 = {
   },
   /** 0x2AD9 indication answering Request Control (~300 ms after the write). */
   requestControlResponse: '80 00 01',
+  /**
+   * ERG 120 W (recorded 2026-11-14): the Flux sends Machine Status
+   * "target power changed" first, then the control point response, ~240 ms
+   * after the write. It then holds the target within about ±10 W at 60 rpm.
+   */
+  setTargetPower120: {
+    write: '05 78 00',
+    machineStatus: '08 78 00',
+    response: '80 05 01',
+  },
 } as const;
 
 /** Heart-rate strap recorded in the same session (flags 0x06: contact supported + detected, uint8). */
