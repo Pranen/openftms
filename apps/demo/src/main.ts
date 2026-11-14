@@ -307,6 +307,7 @@ const render = rafThrottle(() => {
   $<HTMLButtonElement>('trainer-known').disabled = !trainerIdle;
   $<HTMLButtonElement>('hrm-known').disabled = !hrmIdle;
   renderControls();
+  $('recording-download').textContent = `Aufnahme herunterladen (${recorder.packetCount} Pakete)`;
 });
 
 function rangeLabel(r: SupportedRange | undefined, unit: string): string {
@@ -433,6 +434,10 @@ replayFile.addEventListener('change', async () => {
 });
 
 $('recording-download').addEventListener('click', () => {
+  if (recorder.packetCount === 0) {
+    addEvent('Aufnahme ist leer – seit dem Laden der Seite bzw. dem Quellenwechsel wurde nichts empfangen');
+    return;
+  }
   const json = JSON.stringify(recorder.toRecording(), null, 1);
   const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
   const a = h('a', { href: url, download: `open-ftms-recording-${new Date().toISOString().replace(/[:.]/g, '-')}.json` });

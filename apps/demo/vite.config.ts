@@ -14,6 +14,10 @@ export default defineConfig({
     },
   },
   server: {
+    // No automatic page reloads: a reload drops the Bluetooth connection and
+    // all logs/recordings mid-ride. Reload manually; `DEMO_HMR=1 npm run dev`
+    // re-enables live reloading for UI work.
+    hmr: process.env['DEMO_HMR'] === '1',
     // Web Bluetooth requires a secure context; http://localhost qualifies.
     host: 'localhost',
     port: 5173,

@@ -59,7 +59,7 @@ raw control point bytes; "live" sends while dragging (coalesced, latest wins).
 
 ```bash
 npm install
-npm run dev        # demo on http://localhost:5173 (Chrome/Edge)
+npm run dev        # demo on http://localhost:5173 (Chrome/Edge); no auto-reload (keeps BLE + logs), DEMO_HMR=1 enables it
 npm test           # library unit tests
 npm run typecheck
 npm run build
