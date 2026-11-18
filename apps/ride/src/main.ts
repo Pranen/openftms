@@ -1,0 +1,256 @@
+import '@fontsource/press-start-2p';
+import * as THREE from 'three/webgpu';
+import { FixedStepClock, GradeController, Recorder, Ride, airDensity, crrForSurface, DEFAULT_RIDER } from 'sim-core';
+import { RENDER, SIM, TRAINER } from './config';
+import { AutopilotSource, TrainerSource, type PowerSource } from './devices/power-source';
+import { ChaseCamera, FlyCamera } from './render/cameras';
+import { RetroRenderer } from './render/retro';
+import { RiderModel } from './render/rider';
+import { addRoads, addTile, createScene } from './render/scene';
+import { Hud } from './ui/hud';
+import { World } from './world/world';
+
+type Mode = 'trainer' | 'simulator' | 'autopilot' | 'fly';
+
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+const canvas = $<HTMLCanvasElement>('view');
+const scene = createScene();
+const camera = new THREE.PerspectiveCamera(RENDER.fovDeg, innerWidth / innerHeight, RENDER.near, RENDER.far);
+const retro = new RetroRenderer(canvas);
+const hud = new Hud();
+const riderModel = new RiderModel();
+const chase = new ChaseCamera(camera);
+let world: World;
+let fly: FlyCamera;
+
+interface Session {
+  mode: Mode;
+  source: PowerSource | null;
+  ride: Ride;
+  clock: FixedStepClock;
+  grade: GradeController;
+  recorder: Recorder;
+  flying: boolean;
+  paused: boolean;
+  stillSince: number | null;
+  lastSurface: number;
+  fallback: number;
+  wakeLock: WakeLockSentinel | null;
+}
+let session: Session | null = null;
+
+// --- boot ------------------------------------------------------------------------------
+
+async function boot(): Promise<void> {
+  await retro.init(scene, camera);
+  resize();
+  addEventListener('resize', resize);
+  world = await World.load(`${import.meta.env.BASE_URL}world/`, (t, done, total) => {
+    addTile(scene, t);
+    $('loading').textContent = `LADE WELT … ${done}/${total} KACHELN`;
+  });
+  addRoads(scene, world.graph);
+  scene.add(riderModel.group);
+  fly = new FlyCamera(camera, canvas, (x, z) => world.terrainHeight(x, z));
+  $('loading').textContent = `${world.graph.edgeCount} STRASSENABSCHNITTE · ${(totalLength() / 1000).toFixed(0)} KM · ${retro.backendName}`;
+  $('attribution').textContent = world.manifest.attribution.join(' · ');
+  for (const id of ['btn-trainer', 'btn-sim', 'btn-auto', 'btn-fly']) ($(id) as HTMLButtonElement).disabled = false;
+  $('btn-trainer').onclick = () => start('trainer');
+  $('btn-sim').onclick = () => start('simulator');
+  $('btn-auto').onclick = () => start('autopilot');
+  $('btn-fly').onclick = () => start('fly');
+  addEventListener('keydown', onKey);
+  // attract view behind the menu
+  const spawn = spawnPos();
+  const ride = new Ride(world.graph, spawn);
+  chase.update(ride, 1);
+  riderModel.update(ride.pointAhead(0).x, ride.height, ride.pointAhead(0).z, 1, 0, 0, 0);
+  requestAnimationFrame(frame);
+  if (import.meta.env.DEV) (window as unknown as { __ride: unknown }).__ride = { world, scene, camera, get session() { return session; }, retro };
+}
+
+function totalLength(): number {
+  let L = 0;
+  for (let e = 0; e < world.graph.edgeCount; e++) L += world.graph.length(e);
+  return L;
+}
+
+function spawnPos() {
+  const [e, n] = world.manifest.spawn;
+  const p = world.toWorld(e, n);
+  const near = world.graph.nearest(p.x, p.z, 500) ?? { edge: 0, s: 0, dist: 0 };
+  return { edge: near.edge, dir: 1 as const, s: near.s };
+}
+
+function resize(): void {
+  retro.resize(innerWidth, innerHeight, camera);
+}
+
+// --- sessions --------------------------------------------------------------------------
+
+async function start(mode: Mode): Promise<void> {
+  $('error').textContent = '';
+  let source: PowerSource | null = null;
+  try {
+    if (mode === 'trainer' || mode === 'simulator') {
+      const t = new TrainerSource(mode === 'trainer' ? 'bluetooth' : 'simulator');
+      $('loading').textContent = mode === 'trainer' ? 'VERBINDE TRAINER … (5–8 S)' : 'STARTE SIMULATOR …';
+      await t.connect(); // inside the click: opens the Bluetooth chooser
+      source = t;
+    } else if (mode === 'autopilot') {
+      source = new AutopilotSource();
+    }
+  } catch (err) {
+    $('error').textContent = `VERBINDUNG FEHLGESCHLAGEN: ${(err as Error).message}`;
+    $('loading').textContent = '';
+    return;
+  }
+  stop();
+  const ride = new Ride(world.graph, spawnPos(), { rider: DEFAULT_RIDER });
+  session = {
+    mode,
+    source,
+    ride,
+    clock: new FixedStepClock(SIM.step),
+    grade: new GradeController(TRAINER),
+    recorder: new Recorder(),
+    flying: mode === 'fly',
+    paused: false,
+    stillSince: null,
+    lastSurface: -1,
+    fallback: window.setInterval(() => tick(performance.now()), SIM.fallbackIntervalMs),
+    wakeLock: null,
+  };
+  source?.onTelemetry(() => tick(performance.now()));
+  chase.reset();
+  if (session.flying) startFlying();
+  $('menu').hidden = true;
+  hud.show(mode !== 'fly');
+  try {
+    session.wakeLock = await navigator.wakeLock?.request('screen');
+  } catch {
+    /* not available: fine */
+  }
+}
+
+function stop(): void {
+  if (!session) return;
+  clearInterval(session.fallback);
+  session.source?.dispose();
+  session.wakeLock?.release().catch(() => undefined);
+  fly?.disable();
+  session = null;
+}
+
+function startFlying(): void {
+  const p = camera.position.clone();
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  fly.enable(p, Math.atan2(-dir.z, dir.x));
+}
+
+function toMenu(): void {
+  stop();
+  hud.show(false);
+  $('menu').hidden = false;
+  $('loading').textContent = '';
+}
+
+function onKey(e: KeyboardEvent): void {
+  if (e.code === 'Escape') return toMenu();
+  const s = session;
+  if (!s) return;
+  if (e.code === 'KeyV') retro.toggleSnap();
+  if (e.code === 'KeyB') retro.toggleDither();
+  if (e.code === 'KeyH') hud.toggle();
+  if (s.mode === 'fly') return;
+  if (e.code === 'KeyF') {
+    s.flying = !s.flying;
+    if (s.flying) startFlying();
+    else {
+      fly.disable();
+      chase.reset();
+    }
+    return;
+  }
+  if (s.flying) return; // arrows belong to the fly camera
+  if (e.code === 'ArrowLeft') s.ride.choose('left') || s.ride.cycle(-1);
+  if (e.code === 'ArrowRight') s.ride.choose('right') || s.ride.cycle(1);
+  if (e.code === 'ArrowUp') s.ride.choose('straight');
+  if (e.code === 'ArrowDown') s.ride.choose('back');
+  if (e.key === '+' || e.code === 'NumpadAdd') s.source?.adjust(1);
+  if (e.key === '-' || e.code === 'NumpadSubtract') s.source?.adjust(-1);
+  if (e.code === 'KeyP') {
+    s.paused = !s.paused;
+    s.clock.hold();
+  }
+}
+
+// --- simulation ------------------------------------------------------------------------
+
+/** Advance the simulation to now. Called by animation frames, telemetry and a fallback interval. */
+function tick(now: number): void {
+  const s = session;
+  if (!s || !s.source || s.paused) return;
+  const src = s.source;
+  s.clock.advanceTo(now, (dt, t) => {
+    const power = src.power(now);
+    s.ride.step(dt, power);
+    const p = s.ride.pointAhead(0);
+    s.recorder.offer({ t, x: p.x, z: p.z, h: p.h, v: s.ride.v, distance: s.ride.distance, powerW: power, cadenceRpm: src.cadence(), heartRateBpm: src.heartRate() });
+  });
+  // trainer: grade ahead (latency compensated), scaled and rate limited
+  const r = s.ride;
+  const g = r.gradeAhead(r.v * SIM.gradeLatencyS, SIM.gradeWindowM);
+  const send = s.grade.update(s.clock.time, g);
+  if (send !== null) src.setGrade(send);
+  const surf = r.graph.surface(r.pos.edge);
+  if (surf !== s.lastSurface) {
+    s.lastSurface = surf;
+    src.setResistance(crrForSurface(surf), 0.5 * airDensity(r.height) * DEFAULT_RIDER.cda);
+  }
+}
+
+let lastFrame = performance.now();
+function frame(now: number): void {
+  const dt = Math.min(0.1, (now - lastFrame) / 1000);
+  lastFrame = now;
+  const s = session;
+  if (s) {
+    tick(now);
+    const r = s.ride;
+    const p = r.pointAhead(0);
+    const a = r.pointAhead(2);
+    const cadence = s.source?.cadence() ?? 0;
+    riderModel.update(p.x, p.h, p.z, a.x - p.x, a.z - p.z, s.paused || r.v < 0.3 ? 0 : cadence, dt);
+    riderModel.group.visible = s.mode !== 'fly';
+    if (s.flying) fly.update(dt);
+    else chase.update(r, dt);
+    if (s.source) {
+      const still = s.source.power(now) === 0 && r.v * 3.6 < SIM.autoPauseKmh;
+      s.stillSince = still ? (s.stillSince ?? now) : null;
+      hud.update(
+        {
+          mode: s.source.label,
+          state: s.source.state(),
+          powerW: s.source.power(now),
+          cadence: s.source.cadence(),
+          heartRate: s.source.heartRate(),
+          ride: r,
+          trainerGrade: s.mode === 'autopilot' ? null : s.grade.sent,
+          paused: s.paused || (s.stillSince !== null && now - s.stillSince > SIM.autoPauseS * 1000),
+        },
+        now,
+      );
+    }
+  }
+  const sky = scene.getObjectByName('sky');
+  sky?.position.copy(camera.position);
+  retro.render();
+  requestAnimationFrame(frame);
+}
+
+boot().catch((err) => {
+  console.error(err);
+  $('error').textContent = `FEHLER: ${(err as Error).message}`;
+});

@@ -4,3 +4,7 @@ coverage/
 *.log
 *.tsbuildinfo
 .DS_Store
+# Ride world pipeline: Python env and raw-data cache never go into git
+tools/world-pipeline/.venv/
+tools/world-pipeline/.cache/
+__pycache__/

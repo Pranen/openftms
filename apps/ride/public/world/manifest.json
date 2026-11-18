@@ -1,0 +1,40 @@
+{
+ "attribution": [
+  "Höhen: © swisstopo (swissALTI3D, OGD)",
+  "Strassen, Bodenbedeckung, Gebäude: © OpenStreetMap-Mitwirkende (ODbL)"
+ ],
+ "box": [
+  2756000,
+  1230000,
+  2760000,
+  1234000
+ ],
+ "format": 1,
+ "frame": "x = E - E0, y = height, z = N0 - N",
+ "graph": {
+  "bin": "graph.4f22f651.bin",
+  "buildHash": "4f22f651638a",
+  "json": "graph.4f22f651.json"
+ },
+ "levels": {
+  "0": {
+   "1378_615": "1378_615.29709889.bin",
+   "1378_616": "1378_616.f8c738dd.bin",
+   "1379_615": "1379_615.d8fa8e39.bin",
+   "1379_616": "1379_616.e09d514a.bin"
+  }
+ },
+ "origin": [
+  2754000.0,
+  1222000.0
+ ],
+ "spawn": [
+  2757850,
+  1230990
+ ],
+ "tile": {
+  "cell": 7.8125,
+  "n": 257,
+  "size": 2000.0
+ }
+}

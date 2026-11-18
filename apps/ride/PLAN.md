@@ -1,7 +1,7 @@
 # Ride (Arbeitstitel) – Indoor-Cycling-PWA im Rheintal
 
-**Status: Planung abgeschlossen (18.11.2026), noch kein Code.** Nach jedem abgeschlossenen Meilenstein die
-Status-Spalte unten aktualisieren.
+**Status: M0 und M1 umgesetzt (18.11.2026): Vertical Slice Eschen/Schellenberg fahrbar mit Trainer, Simulator,
+Demo-Autopilot und Freiflug.** Nach jedem abgeschlossenen Meilenstein die Status-Spalte unten aktualisieren.
 
 Webbasierte Indoor-Cycling-App wie Zwift, aber lokal, unabhängig und im PS1-Retro-Look. Statt einer Fantasiewelt
 die echte Region Feldkirch – Landquart – Walenstadt – Oberriet (ca. 40 × 40 km). Aufrufen, Smart Trainer verbinden,
@@ -153,13 +153,13 @@ graph.bin
             lengthCm     Uint32
             attrs        Uint32 – Klasse 4 Bit, Belag 3 Bit, Zugang vor/rück, Velostreifen, Kreisel, Reserve
             routes       Uint32 Bitmaske → Velorouten-Tabelle
-            geomStart    Uint32, geomCount Uint16
-            profStart    Uint32 (Anzahl = ceil(Länge / 5 m) + 1)
+            geomStart    Uint32, geomCount Uint32
+            profStart    Uint32 (Anzahl = Differenz zum nächsten Start; Proben bei 0, 5, 10 … m und am Ende)
             nameId       Uint32 → Stringtabelle
             osmWayId     Float64 (Debug/Attribution, abtrennbar)
  adjacency  offsets Uint32[N+1], entries Uint32 (edgeId << 1 | Richtung)   (CSR)
  geometry   x, z Int32 cm, vereinfacht (ca. 1 Punkt / 10–15 m)
- profiles   h Uint16 cm + Offset, bereits geglättet – die einzige Wahrheit für Physik und Trainer
+ profile    h Uint16 × heightScale (0.05 m) + heightOffset, bereits geglättet – die einzige Wahrheit für Physik und Trainer
  sections   edgeId, sStart, sEnd, flags (Brücke/Tunnel/Galerie)
  strings    UTF-8 + Offsets
 ```
@@ -346,8 +346,8 @@ Höhenwechseln, `crr` beim Belagswechsel, `windSpeedMps = 0`.
 
 | | Meilenstein | Inhalt | Status |
 |---|---|---|---|
-| M0 | Gerüst | `apps/ride` (Vite, PWA, Three.js WebGPU), `packages/sim-core`, `packages/route-graph`, `tools/world-pipeline`, Deploy-Workflow | offen |
-| M1 | Vertical Slice | **2 × 2 L0-Kacheln Eschen/Schellenberg** (siehe unten): Graph-Ausschnitt, Gelände 8 m mit Einschnitt, freies Fahren, Trainer-Steigung, Retro-Pass, HUD | offen |
+| M0 | Gerüst | `apps/ride` (Vite, PWA, Three.js WebGPU), `packages/sim-core`, `packages/route-graph`, `tools/world-pipeline`; Deploy-Workflow noch offen (braucht Eintrag in pwa-infrastructure) | erledigt bis auf Deploy |
+| M1 | Vertical Slice | **2 × 2 L0-Kacheln Eschen/Schellenberg** (siehe unten): Graph-Ausschnitt, Gelände 8 m mit Einschnitt, freies Fahren, Trainer-Steigung, Retro-Pass, HUD, Demo-Modus | erledigt (mit echtem Flux 2 noch nicht gefahren) |
 | M2 | Graph der Region | ganzes Fahrnetz inkl. Vorarlberg, Prüfungen (Querprofile, Steigungs-Histogramm), Navigator an Kreuzungen | offen |
 | M3 | Welt-Streaming | Pyramide L0–L4, Ringwahl, Worker, Service Worker, Gebäude, Kulisse, Gewässer, Bäume | offen |
 | M4 | Routen | GPX-Import mit Map-Matching, Routenwahl, Routen speichern | offen |
@@ -378,3 +378,17 @@ Der Ausschnitt deckt damit Flachstück **und** Anstieg ab und testet nebenbei Ka
 - **Ränder:** Am Rand des Ausschnitts endet der Graph; der Navigator wendet dort (oder Kanten bis zur Grenze kappen)
 - **Fertig, wenn:** man mit dem Flux 2 (oder `SimulatedTrainer`) frei durch das Gebiet fährt, an Kreuzungen
   abbiegt, die Steigung am Anstieg nach Schellenberg spürbar und glatt ankommt, und 60 FPS im Retro-Look hält
+
+### M1: Stand und Erkenntnisse (18.11.2026)
+
+- **Graph:** 655 Knoten, 815 Kanten, 125 km, 18 Brücken/Tunnel; steilste 20-m-Abschnitte 28 % (Fusswege am Eschnerberg).
+- **Weltdaten:** 1.2 MB (Graph + 4 Kacheln mit 4'500 OSM-Gebäuden); zweiter Pipeline-Lauf byteidentisch.
+- **Gebäude** in M1 aus OSM-Grundrissen (Höhe aus `building:levels`/Typ), Sattel-/Walmdach auf dem orientierten Rechteck;
+  swissBUILDINGS3D-Höhen kommen mit M3.
+- **Noch nicht in M1:** Kulissennetz (`LINE`), Gewässer (`WATR`), Bäume, Böschungsstreifen, Fern-Durchgang
+  (nur L0 vorhanden, deshalb ein Tiefen-Durchgang), Brückenkörper (Fahrbahn schwebt über dem Gelände).
+- **Demo-Modus** (Wunsch während M1): «Autopilot» fährt mit einstellbarer Leistung ohne Trainer, «Fliegen» ist eine
+  freie Kamera (WASD, Q/E, Maus); `F` schaltet beim Fahren zwischen Verfolger und Freiflug um.
+- **Bildrate:** im eingebetteten Vorschau-Browser 30 FPS bei ca. 0.1 ms Renderaufruf und 0.03 ms Physikschritt
+  (384k Dreiecke, 20 Draw-Calls); in Chrome direkt noch zu messen.
+- **Kreuzungen:** Bänder überlappen sichtbar wie erwartet; Kreuzungsflächen bleiben offen.
