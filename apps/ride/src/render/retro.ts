@@ -1,11 +1,13 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn,
+  cameraPosition,
   cameraProjectionMatrix,
+  cameraViewMatrix,
   float,
   floor,
   mix,
-  modelViewMatrix,
+  modelWorldMatrix,
   pass,
   positionLocal,
   screenCoordinate,
@@ -43,8 +45,14 @@ function bayerTexture(): THREE.DataTexture {
 /** Screen grid for vertex snapping (in NDC units per half screen); huge = off. */
 const snapGrid = uniform(new THREE.Vector2(1e6, 1e6));
 
-/** Flat-shaded vertex-colour material with PS1 vertex snapping. */
-export function retroMaterial(opts: { side?: THREE.Side; polygonOffset?: number } = {}): THREE.MeshLambertNodeMaterial {
+/**
+ * Flat-shaded vertex-colour material with PS1 vertex snapping (`snap: false` for long thin
+ * bands like roads and their markings, which snapping bends into a zigzag). `curvature`: the earth's
+ * apparent drop relative to the camera (for the panorama: far summits sink like in reality).
+ */
+export function retroMaterial(
+  opts: { side?: THREE.Side; polygonOffset?: number; curvature?: boolean; snap?: boolean } = {},
+): THREE.MeshLambertNodeMaterial {
   const m = new THREE.MeshLambertNodeMaterial({ vertexColors: true, flatShading: true, side: opts.side ?? THREE.FrontSide });
   if (opts.polygonOffset) {
     m.polygonOffset = true;
@@ -52,7 +60,14 @@ export function retroMaterial(opts: { side?: THREE.Side; polygonOffset?: number 
     m.polygonOffsetUnits = -opts.polygonOffset;
   }
   m.vertexNode = Fn(() => {
-    const clip = cameraProjectionMatrix.mul(modelViewMatrix).mul(vec4(positionLocal, 1)).toVar();
+    const world = modelWorldMatrix.mul(vec4(positionLocal, 1)).toVar();
+    let y = world.y;
+    if (opts.curvature) {
+      const d = world.xz.sub(cameraPosition.xz).length();
+      y = y.sub(d.mul(d).mul((1 - RENDER.refraction) / (2 * RENDER.earthRadius)));
+    }
+    const clip = cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(world.x, y, world.z, 1)).toVar();
+    if (opts.snap === false) return clip;
     const snapped = floor(clip.xy.div(clip.w).mul(snapGrid).add(0.5)).div(snapGrid).mul(clip.w);
     return vec4(snapped, clip.z, clip.w);
   })();
@@ -70,11 +85,18 @@ export class RetroRenderer {
     this.renderer = new THREE.WebGPURenderer({ canvas, antialias: false });
   }
 
-  async init(scene: THREE.Scene, camera: THREE.Camera): Promise<void> {
+  /** Far pass (sky, panorama) first, then the near world on top with its own depth buffer. */
+  readonly farCamera = new THREE.PerspectiveCamera(RENDER.fovDeg, 1, RENDER.farPassNear, RENDER.farPassFar);
+  private camera!: THREE.PerspectiveCamera;
+
+  async init(near: THREE.Scene, far: THREE.Scene, camera: THREE.PerspectiveCamera): Promise<void> {
     await this.renderer.init();
     this.renderer.setPixelRatio(1);
-    const scenePass = pass(scene, camera);
-    const color = scenePass.getTextureNode('output');
+    this.renderer.setClearColor(0x000000, 0); // near pass: transparent where it draws nothing
+    this.camera = camera;
+    const farColor = pass(far, this.farCamera).getTextureNode('output');
+    const nearColor = pass(near, camera).getTextureNode('output');
+    const color = mix(farColor, nearColor, nearColor.a);
     const bayer = texture(bayerTexture(), screenCoordinate.xy.div(4));
     const levels = this.uLevels;
     const dither = this.uDither;
@@ -119,6 +141,16 @@ export class RetroRenderer {
   }
 
   render(): void {
+    const c = this.camera;
+    const f = this.farCamera;
+    f.position.copy(c.position);
+    f.quaternion.copy(c.quaternion);
+    if (f.fov !== c.fov || f.aspect !== c.aspect) {
+      f.fov = c.fov;
+      f.aspect = c.aspect;
+      f.updateProjectionMatrix();
+    }
+    f.updateMatrixWorld();
     this.pipeline.render();
   }
 }

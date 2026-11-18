@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from ride_pipeline import graph as G
+from ride_pipeline import panorama as P
 from ride_pipeline import tiles as T
 from ride_pipeline.dem import Dem
 from ride_pipeline.geo import E0, N0
@@ -22,6 +23,7 @@ from ride_pipeline.sources import dem_tiles, osm_clip, osm_extract
 HERE = Path(__file__).resolve().parent
 ATTRIBUTION = [
     "Höhen: © swisstopo (swissALTI3D, OGD)",
+    "Panorama: Copernicus DEM © DLR e.V. 2010-2014 und © Airbus Defence and Space GmbH 2014-2018, bereitgestellt im Rahmen von COPERNICUS durch die EU und die ESA",
     "Strassen, Bodenbedeckung, Gebäude: © OpenStreetMap-Mitwirkende (ODbL)",
 ]
 
@@ -65,6 +67,9 @@ def main() -> None:
             level0[f"{ix}_{iy}"] = name
             print(f"  L0/{name}  h {h.min():.0f}-{h.max():.0f} m, {int.from_bytes(bldg[:4], 'little')} buildings")
 
+    print("panorama (Copernicus)")
+    level4 = P.build(tuple(cfg["region"]), (e_min, n_min, e_max, n_max), out)
+
     manifest = {
         "format": 1,
         "origin": [E0, N0],
@@ -72,12 +77,13 @@ def main() -> None:
         "box": cfg["box"],
         "spawn": cfg["spawn"],
         "tile": {"size": T.TILE, "n": T.N, "cell": T.CELL},
-        "levels": {"0": dict(sorted(level0.items()))},
+        "levelInfo": {"0": {"size": T.TILE, "cell": T.CELL}, str(P.LEVEL): {"size": P.SIZE, "cell": P.CELL}},
+        "levels": {"0": dict(sorted(level0.items())), str(P.LEVEL): dict(sorted(level4.items()))},
         "graph": graph_files,
         "attribution": ATTRIBUTION,
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1, sort_keys=True, ensure_ascii=False) + "\n",
-                                      encoding="utf-8")
+                                      encoding="utf-8", newline="\n")
     print(f"done in {time.time() - t0:.0f} s -> {out}")
 
 

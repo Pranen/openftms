@@ -121,8 +121,8 @@ cycleway 105 km; 2'845 Brücken, 478 Tunnel, 292 Kreisel. Hochgerechnet auf die 
 | | Regel |
 |---|---|
 | ja | `cycleway`, `residential`, `living_street`, `unclassified`, `tertiary`, `secondary`, `primary`, `*_link` |
-| bedingt | `track` mit `tracktype=grade1–3` oder befestigtem Belag (grade3 als Kies markiert); `path`/`footway`/`pedestrian` mit `bicycle=yes\|designated\|permissive` |
-| nein | `bicycle=no\|use_sidepath\|private`, `access=no` ohne Velo-Ausnahme, `motorroad=yes`, `steps`, `service`, `construction`, `proposed` |
+| bedingt | `track` ausser `tracktype=grade4–5` oder weichem Belag (Gras, Erde, Rasengitter …; ohne Angabe = befahrbar, im Riet der Normalfall); `service` ohne `service=*`-Untertyp und ohne Zugangssperre (Feld- und Gewerbezufahrten, als `track`-Klasse); `path`/`footway`/`pedestrian` mit `bicycle=yes\|designated\|permissive` |
+| nein | `bicycle=no\|private` (`use_sidepath` ist befahrbar, der Begleitweg entfällt), `access=no` ohne Velo-Ausnahme, `motorroad=yes`, `steps`, `service=driveway\|parking_aisle\|…`, `construction`, `proposed` |
 | Kulisse | `motorway`, `trunk`, Bahn, `service` – nur als Bänder in den Kacheln, nicht befahrbar |
 
 Danach nur die grösste zusammenhängende Komponente behalten. Alp- und Forststrassen (grade1–3) gehören dazu:
@@ -314,7 +314,7 @@ Höhenwechseln, `crr` beim Belagswechsel, `windSpeedMps = 0`.
 | Affine Texturen | `uv·w` und `w` als Varying, im Fragment teilen; nur Markierungen, Fassaden, Schilder | neu |
 | Tiefe | **zwei Durchgänge:** fern (L2–L4, near 400 m / far 100 km), Tiefe löschen, nah (near 0.3 m / far 6 km) | neu |
 | Nebel | Detail-Nebel ab ca. 2.5 km in Geländefarbe (verdeckt Laden/Entladen); Dunst bis ca. 60 km, höhenabhängig | li-auto `daytime.ts`, ski `panorama.ts` |
-| Bäume | instanzierte Sprites/Low-Poly mit Alpha-Test | li-auto `trees.ts` |
+| Bäume | instanzierte Low-Poly-Modelle mit Vertexfarben (`render/trees.ts`) | li-auto `trees.ts` |
 | Himmel | Farbverlauf, Sprite-Wolken; Tageszeit später | li-auto `daytime.ts` |
 | Schatten | keine, Fleck unter dem Fahrer | – |
 | Fahrer | Low-Poly, Kurbelwinkel aus der Kadenz integriert | neu |
@@ -382,13 +382,48 @@ Der Ausschnitt deckt damit Flachstück **und** Anstieg ab und testet nebenbei Ka
 ### M1: Stand und Erkenntnisse (18.11.2026)
 
 - **Graph:** 655 Knoten, 815 Kanten, 125 km, 18 Brücken/Tunnel; steilste 20-m-Abschnitte 28 % (Fusswege am Eschnerberg).
-- **Weltdaten:** 1.2 MB (Graph + 4 Kacheln mit 4'500 OSM-Gebäuden); zweiter Pipeline-Lauf byteidentisch.
+- **Weltdaten:** 1.2 MB (Graph + 4 Kacheln mit 4'500 OSM-Gebäuden; mit Panorama 2.0 MB); zweiter Pipeline-Lauf byteidentisch.
 - **Gebäude** in M1 aus OSM-Grundrissen (Höhe aus `building:levels`/Typ), Sattel-/Walmdach auf dem orientierten Rechteck;
   swissBUILDINGS3D-Höhen kommen mit M3.
-- **Noch nicht in M1:** Kulissennetz (`LINE`), Gewässer (`WATR`), Bäume, Böschungsstreifen, Fern-Durchgang
-  (nur L0 vorhanden, deshalb ein Tiefen-Durchgang), Brückenkörper (Fahrbahn schwebt über dem Gelände).
+- **Copernicus-Panorama vorgezogen:** Stufe L4 (4 Kacheln zu 64 km, 250 m Raster, Höhen in 0.1-m-Schritten für Gipfel
+  bis 6'553 m; Tödi 3'587 m) aus GLO-30, Bodenbedeckung aus Höhe und Neigung, unter den L0-Kacheln abgesenkt.
+  Renderer mit den geplanten zwei Tiefen-Durchgängen (fern 300 m – 130 km mit Himmel und Panorama, nah 0.3 m – 9 km),
+  gemeinsamer Dunst 5–95 km, Erdkrümmung mit Refraktion im Vertex-Shader relativ zur Kamera. Ohne L1–L3 wirkt das
+  Panorama in den ersten Kilometern um den Ausschnitt noch grob; Seen (Walensee, Bodensee) fehlen noch.
+- **Bäume vorgezogen:** der Client streut sie beim Laden deterministisch aus `CODE` auf einem globalen,
+  verrüttelten Raster (Wald 7 m, Obstgarten 11 m in Reihen, einzeln auf Wiesen und in Dörfern), mit Abstand zu
+  Fahrbahnrand und Gebäuden; Nadelbaum-Anteil steigt mit der Höhe, Bestände über Rauschen. Low-Poly-Modelle mit
+  Vertexfarben (statt Sprites mit Alpha-Test: passt zum flachen PS1-Look, keine Textur) als `InstancedMesh` in
+  500-m-Blöcken, die ab 4 km ausgeschaltet werden. M1: 37'000 Bäume, ca. 0.2 s beim Laden.
+- **Noch nicht in M1:** Kulissennetz (`LINE`), Gewässer (`WATR`), Hecken und Ufergehölz, Böschungsstreifen, Stufen L1–L3,
+  Brückenkörper (Fahrbahn schwebt über dem Gelände).
 - **Demo-Modus** (Wunsch während M1): «Autopilot» fährt mit einstellbarer Leistung ohne Trainer, «Fliegen» ist eine
   freie Kamera (WASD, Q/E, Maus); `F` schaltet beim Fahren zwischen Verfolger und Freiflug um.
 - **Bildrate:** im eingebetteten Vorschau-Browser 30 FPS bei ca. 0.1 ms Renderaufruf und 0.03 ms Physikschritt
   (384k Dreiecke, 20 Draw-Calls); in Chrome direkt noch zu messen.
 - **Kreuzungen:** Bänder überlappen sichtbar wie erwartet; Kreuzungsflächen bleiben offen.
+- **Strassenbild nachgebessert** (Rückmeldung «Strassen krumm», Essanestrasse Eschen): die Geometrie war treu, krumm
+  wirkten (1) Gelände, das an den Rändern durch das Band stach – der Einschnitt deckt jetzt eine ganze Zelle ab
+  (Kern 8 m, Übergang bis 22 m, Gelände 0.3 m unter der Fahrbahn) –, (2) das Vertex-Snapping, das lange dünne Bänder
+  zum Zickzack verbiegt – Strassen und Markierungen sind davon ausgenommen – und (3) Knicke an Polylinien-Ecken –
+  die Bandnormale kommt jetzt aus einer zentralen Differenz. Dazu Markierung nach Schweizer Muster, vereinfacht:
+  Leitlinie (3 m Strich, 6 m Lücke) ab `unclassified` auf Zweirichtungsstrassen, Randlinien ab `tertiary`, gelbe
+  gestrichelte Velostreifen, Abstand 8 m vor Knoten. Graphfilter um Feldwege ohne `tracktype` und einfache
+  `service`-Strassen erweitert (Riet): M1-Graph 1'526 Kanten, 161.5 km (vorher 815, 125 km).
+- **Knoten und Kreisel** (Rückmeldung Essanestrasse, Eintracht-Kreisel): Die Knoten-Zusammenfassung schob bisher nur
+  den letzten Stützpunkt einer Kante auf den Knotenschwerpunkt – bis 11 m bei Kreiseln, dadurch S-Kurven und Knicke.
+  Jetzt wird die Verschiebung über die letzten 35 m weich verteilt (dort auf 2 m verdichtet). Einbahn-Fahrbahnen
+  (getrennte Zufahrten an Inseln, Rampen, Kreisel; neues Bit `ATTR_ONEWAY` = 1<<10) werden mit 60 % Breite gezeichnet
+  und eingeschnitten, kurze Stücke unter 80 m bleiben unmarkiert. Kreisel bleiben im Graphen ein Entscheidungspunkt;
+  `graph.json` führt ihren Radius (`roundabouts`), der Client zeichnet Fahrbahnring, Grasinsel und Randlinie darüber.
+  Der Knoten selbst liegt jetzt auf der wichtigsten Strasse des Clusters (Kreisel: Mitte des Rings) statt im
+  Schwerpunkt aller Clusterpunkte: Kurze Verbindungen zu parallelen Velowegen und Zufahrten zogen die Hauptstrasse
+  sonst bei jeder Querung bis 7 m zur Seite (Essanestrasse Eschen–Nendeln). Geprüft gegen OSM: Die Essanestrasse
+  weicht nur noch an den Kreiselzufahrten (unter der Insel) mehr als 1.5 m ab.
+- **Ein Netz, die grössere Strasse gewinnt** (Entscheid 18.11.2026): Velowege und Wege mit Velofreigabe, die auf
+  mindestens 30 m höchstens 12 m neben einer Strasse (ab `residential`) und in gleicher Richtung (±25°) verlaufen,
+  fallen dort aus Graph und Darstellung weg (als Begleitweg/Trottoir getaggte bis 20 m). Biegt der Weg ab, bleibt
+  der Rest und wird an den nächsten Strassenknoten (≤ 25 m) angeschlossen. Strassen mit `bicycle=use_sidepath` sind
+  dafür befahrbar. Die zwei Einbahn-Hälften an Inseln (≤ 250 m, Enden ≤ 30 m auseinander, gleicher Name und Klasse)
+  werden zu einer Zweirichtungsstrasse auf der Mittellinie zusammengelegt. M1: 1'499 Kanten, 153 km (8 km
+  Begleitwege weniger); Kreisel haben jetzt saubere vier Arme.

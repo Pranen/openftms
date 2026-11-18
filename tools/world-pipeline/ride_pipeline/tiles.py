@@ -17,6 +17,7 @@ from scipy.spatial import cKDTree
 
 from .dem import Dem
 from .geo import E0, N0, cumulative, sample_at
+from .graph import ATTR_ONEWAY as G_ATTR_ONEWAY, ONEWAY_WIDTH as G_ONEWAY_WIDTH
 from .osm_read import Area
 
 TILE = 2000.0
@@ -29,10 +30,12 @@ VERSION = 1
 # land cover codes (CODE section), shared with apps/ride/src/world/tile.ts
 MEADOW, FOREST, ORCHARD, SETTLEMENT, ROCK, WATER, GLACIER, FARMLAND = range(8)
 
-# carve: full road height up to half width + CARVE_CORE, blended to terrain until + CARVE_FALLOFF
-CARVE_CORE = 3.0
-CARVE_FALLOFF = 16.0
-ROAD_DROP = 0.15  # terrain this far below the road surface
+# carve: full road height up to half width + CARVE_CORE, blended to terrain until + CARVE_FALLOFF.
+# The core covers one grid cell: a point on the road band lies in an 8 m triangle whose corners may be
+# up to a cell diagonal away, and none of them may stick out above the band (jagged road edges).
+CARVE_CORE = 8.0
+CARVE_FALLOFF = 22.0
+ROAD_DROP = 0.3  # terrain this far below the road surface
 
 
 def landcover_code(t: dict[str, str]) -> int | None:
@@ -81,7 +84,7 @@ def road_samples(graph: dict, half_width: list[float]) -> tuple[np.ndarray, np.n
             continue
         pts.append(sample_at(e.en, ss))
         hs.append(np.interp(ss, s, h))
-        ws.append(np.full(len(ss), half_width[e.cls]))
+        ws.append(np.full(len(ss), half_width[e.cls] * (G_ONEWAY_WIDTH if e.attrs & G_ATTR_ONEWAY else 1.0)))
     return np.vstack(pts), np.concatenate(hs), np.concatenate(ws)
 
 
@@ -209,15 +212,17 @@ def buildings(areas: list[Area], dem: Dem, te: float, tn: float) -> bytes:
 
 # --- file -----------------------------------------------------------------------------
 
-def encode_heights(h: np.ndarray) -> bytes:
-    q = np.clip(np.round((h - H_OFFSET) / H_SCALE), 0, 65535).astype(np.int64)
+def encode_heights(h: np.ndarray, scale: float = H_SCALE) -> bytes:
+    q = np.clip(np.round((h - H_OFFSET) / scale), 0, 65535).astype(np.int64)
     a = np.diff(q, axis=1, prepend=0)
     d = (np.diff(a, axis=0, prepend=0) % 65536).astype("<u2")
     return d.tobytes()
 
 
-def write_tile(out_dir, ix: int, iy: int, sections: list[tuple[bytes, bytes]]) -> str:
-    """sections: [(4-char id, payload)]. Returns the file name (with content hash)."""
+def write_tile(out_dir, ix: int, iy: int, sections: list[tuple[bytes, bytes]], level: int = 0,
+               size: float = TILE, h_scale: float = H_SCALE) -> str:
+    """sections: [(4-char id, payload)]. Tile (ix, iy) of `level` covers [ix·size, (ix+1)·size) in E/N.
+    Returns the file name (with content hash)."""
     header_size = 48
     table_size = 12 * len(sections)
     body = bytearray()
@@ -228,8 +233,8 @@ def write_tile(out_dir, ix: int, iy: int, sections: list[tuple[bytes, bytes]]) -
             body.append(0)
         table += sid + struct.pack("<II", offset + len(body), len(payload))
         body += payload
-    header = b"RIDE" + struct.pack("<HBxiiddHHfff", VERSION, 0, ix, iy, ix * TILE, iy * TILE, N, len(sections),
-                                  CELL, H_SCALE, H_OFFSET)
+    header = b"RIDE" + struct.pack("<HBxiiddHHfff", VERSION, level, ix, iy, ix * size, iy * size, N, len(sections),
+                                  size / (N - 1), h_scale, H_OFFSET)
     assert len(header) == header_size, len(header)
     blob = bytes(header + table + body)
     key = f"{ix}_{iy}"

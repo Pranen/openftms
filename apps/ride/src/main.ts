@@ -6,7 +6,8 @@ import { AutopilotSource, TrainerSource, type PowerSource } from './devices/powe
 import { ChaseCamera, FlyCamera } from './render/cameras';
 import { RetroRenderer } from './render/retro';
 import { RiderModel } from './render/rider';
-import { addRoads, addTile, createScene } from './render/scene';
+import { Trees } from './render/trees';
+import { addRoads, addTile, createScenes } from './render/scene';
 import { Hud } from './ui/hud';
 import { World } from './world/world';
 
@@ -14,7 +15,7 @@ type Mode = 'trainer' | 'simulator' | 'autopilot' | 'fly';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>('view');
-const scene = createScene();
+const { near: scene, far: farScene } = createScenes();
 const camera = new THREE.PerspectiveCamera(RENDER.fovDeg, innerWidth / innerHeight, RENDER.near, RENDER.far);
 const retro = new RetroRenderer(canvas);
 const hud = new Hud();
@@ -22,6 +23,7 @@ const riderModel = new RiderModel();
 const chase = new ChaseCamera(camera);
 let world: World;
 let fly: FlyCamera;
+let trees: Trees;
 
 interface Session {
   mode: Mode;
@@ -42,17 +44,19 @@ let session: Session | null = null;
 // --- boot ------------------------------------------------------------------------------
 
 async function boot(): Promise<void> {
-  await retro.init(scene, camera);
+  await retro.init(scene, farScene, camera);
   resize();
   addEventListener('resize', resize);
   world = await World.load(`${import.meta.env.BASE_URL}world/`, (t, done, total) => {
-    addTile(scene, t);
+    addTile(t.level === 0 ? scene : farScene, t);
     $('loading').textContent = `LADE WELT … ${done}/${total} KACHELN`;
   });
   addRoads(scene, world.graph);
+  trees = new Trees(world.tiles, world.graph, (x, z) => world.terrainHeight(x, z));
+  scene.add(trees.group);
   scene.add(riderModel.group);
   fly = new FlyCamera(camera, canvas, (x, z) => world.terrainHeight(x, z));
-  $('loading').textContent = `${world.graph.edgeCount} STRASSENABSCHNITTE · ${(totalLength() / 1000).toFixed(0)} KM · ${retro.backendName}`;
+  $('loading').textContent = `${world.graph.edgeCount} STRASSENABSCHNITTE · ${(totalLength() / 1000).toFixed(0)} KM · ${trees.count} BÄUME · ${retro.backendName}`;
   $('attribution').textContent = world.manifest.attribution.join(' · ');
   for (const id of ['btn-trainer', 'btn-sim', 'btn-auto', 'btn-fly']) ($(id) as HTMLButtonElement).disabled = false;
   $('btn-trainer').onclick = () => start('trainer');
@@ -66,7 +70,7 @@ async function boot(): Promise<void> {
   chase.update(ride, 1);
   riderModel.update(ride.pointAhead(0).x, ride.height, ride.pointAhead(0).z, 1, 0, 0, 0);
   requestAnimationFrame(frame);
-  if (import.meta.env.DEV) (window as unknown as { __ride: unknown }).__ride = { world, scene, camera, get session() { return session; }, retro };
+  if (import.meta.env.DEV) (window as unknown as { __ride: unknown }).__ride = { world, scene, camera, get session() { return session; }, retro, trees, get fly() { return fly; } };
 }
 
 function totalLength(): number {
@@ -244,8 +248,9 @@ function frame(now: number): void {
       );
     }
   }
-  const sky = scene.getObjectByName('sky');
+  const sky = farScene.getObjectByName('sky');
   sky?.position.copy(camera.position);
+  trees?.update(camera.position);
   retro.render();
   requestAnimationFrame(frame);
 }

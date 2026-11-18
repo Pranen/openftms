@@ -1,6 +1,8 @@
 import {
   ATTR_ACCESS_BWD,
   ATTR_ACCESS_FWD,
+  ATTR_CYCLELANE,
+  ATTR_ONEWAY,
   parseArrays,
   type GraphArrays,
   type GraphMeta,
@@ -136,6 +138,11 @@ export class RouteGraph {
     return (this.a.edgeAttrs[e]! & (dir > 0 ? ATTR_ACCESS_FWD : ATTR_ACCESS_BWD)) !== 0;
   }
 
+  /** Whether the edge has a painted cycle lane (OSM cycleway=lane/track). */
+  cycleLane(e: number): boolean {
+    return (this.a.edgeAttrs[e]! & ATTR_CYCLELANE) !== 0;
+  }
+
   name(e: number): string {
     const id = this.a.edgeName[e]!;
     const o = this.a.nameOffsets;
@@ -143,7 +150,13 @@ export class RouteGraph {
   }
 
   halfWidth(e: number): number {
-    return this.meta.roadHalfWidth[this.edgeClass(e)] ?? 2;
+    const hw = this.meta.roadHalfWidth[this.edgeClass(e)] ?? 2;
+    return this.oneway(e) ? hw * (this.meta.onewayWidth ?? 1) : hw;
+  }
+
+  /** One carriageway of a one-way road for motor traffic (bikes may still be allowed both ways). */
+  oneway(e: number): boolean {
+    return (this.a.edgeAttrs[e]! & ATTR_ONEWAY) !== 0;
   }
 
   sections(e: number): readonly Section[] {

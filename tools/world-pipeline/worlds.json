@@ -2,6 +2,7 @@
   "m1": {
     "description": "Vertical slice M1: 2 x 2 L0 tiles around Eschen/Schellenberg",
     "box": [2756000, 1230000, 2760000, 1234000],
+    "region": [2739000, 1199000, 2772000, 1246000],
     "osm": ["liechtenstein", "switzerland"],
     "spawn": [2757850, 1230990]
   }

@@ -29,6 +29,8 @@ export const SURFACE = {
 export const ATTR_ACCESS_FWD = 1 << 7;
 export const ATTR_ACCESS_BWD = 1 << 8;
 export const ATTR_CYCLELANE = 1 << 9;
+/** One carriageway of a one-way road (dual carriageway, ramp, roundabout): narrower band, no centre line. */
+export const ATTR_ONEWAY = 1 << 10;
 
 export const SEC_BRIDGE = 1;
 export const SEC_TUNNEL = 2;
@@ -50,6 +52,10 @@ export interface GraphMeta {
   classes: string[];
   surfaces: string[];
   roadHalfWidth: number[];
+  /** Band width factor of one-way carriageways (ATTR_ONEWAY). */
+  onewayWidth?: number;
+  /** Roundabouts collapsed into one node: [node, radius in m]. */
+  roundabouts?: [node: number, radius: number][];
   routes: { bit: number; network: string; ref: string; name: string }[];
   sections: Record<string, [offset: number, count: number, dtype: DType]>;
   buildHash: string;

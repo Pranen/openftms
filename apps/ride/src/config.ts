@@ -9,13 +9,22 @@ export const RENDER = {
   /** Vertex snapping grid as a fraction of the internal resolution (0.5 = half resolution, subtle); 0 = off. */
   vertexSnap: 0.5,
   fovDeg: 60,
+  /** Near pass (L0 world). */
   near: 0.3,
   far: 9000,
-  /** Detail fog (distance in m where it starts / is complete). */
-  fogNear: 1200,
-  fogFar: 4200,
+  /** Far pass (panorama levels), drawn first with its own depth buffer. */
+  farPassNear: 300,
+  farPassFar: 130000,
+  /** Haze shared by both passes (distance in m where it starts / is complete). */
+  hazeNear: 5000,
+  hazeFar: 95000,
+  /** Earth curvature with refraction (apparent drop d²/2R·(1−k)), applied to the panorama. */
+  earthRadius: 6371000,
+  refraction: 0.13,
   sky: { horizon: 0xb3c8dc, zenith: 0x3d6ea8 },
   sunDirection: [-0.5, 0.8, 0.35] as const,
+  /** Trees are drawn up to this distance (m); beyond, the forest colour of the ground carries it. */
+  treeDistance: 4000,
   /** Road band height above the carved terrain (m). */
   roadLift: 0.08,
 };
@@ -72,6 +81,40 @@ export const ROAD_COLOR: Record<number, number> = {
   1: 0xa39276, // path
   2: 0xa89a78, // track
 };
+/**
+ * Road markings (after Swiss practice, simplified): dashed centre line on two-way roads from
+ * `centreFromClass` up, solid edge lines from `edgeFromClass` up, yellow dashed cycle lanes.
+ * Lengths in m; markings stop `junctionGap` short of a junction.
+ */
+export const MARKING = {
+  white: 0xe8e8e0,
+  yellow: 0xe0c040,
+  width: 0.15,
+  centreFromClass: 5,
+  edgeFromClass: 6,
+  edgeInset: 0.35,
+  dash: 3,
+  gap: 6,
+  laneDash: 1.5,
+  laneGap: 1.5,
+  laneWidth: 1.5,
+  junctionGap: 8,
+  /** One-way pieces shorter than this (split approaches at islands) get no markings. */
+  minOnewayLength: 80,
+  lift: 0.03,
+};
+
+/** Roundabout drawing (the graph has one node per roundabout, with its radius). */
+export const ROUNDABOUT = {
+  lane: 7,
+  minIsland: 3,
+  island: 0x6f9a48,
+  /** Above all road bands (the approaches end under the ring), island above the ring. */
+  lift: 0.2,
+  islandLift: 0.45,
+  segments: 24,
+};
+
 export const ROAD_COLOR_DEFAULT = 0x66666c;
 export const GRAVEL_COLOR = 0xa89a78;
 
@@ -80,4 +123,34 @@ export const BUILDING = {
   roofs: [0x8c3b2e, 0x6e2f27, 0x5a5550, 0x7a4a32, 0x8a4434, 0x4e4a48, 0x9a5a3a, 0x6a3a2c],
   flatRoof: 0x77736c,
   overhang: 0.35,
+};
+
+/**
+ * Trees, scattered deterministically per land cover code (PLAN.md, Kachelformat: the client
+ * plants them from CODE and a seed). spacing: candidate grid (m), density: share of candidates
+ * planted, conifer: share of conifers (rises with height), clear: gap to road edges and houses (m).
+ */
+export const TREES = {
+  forest: { spacing: 7, density: 0.8 },
+  orchard: { spacing: 11, density: 0.75 },
+  meadow: { spacing: 24, density: 0.06 },
+  settlement: { spacing: 18, density: 0.12 },
+  coniferLow: 0.35,
+  coniferHigh: 0.9,
+  coniferFrom: 600,
+  coniferTo: 1300,
+  clearRoad: 2.5,
+  clearHouse: 2,
+  /** Height range (m) of a conifer and a broadleaf tree; widths follow the shape. */
+  coniferHeight: [14, 26] as const,
+  broadleafHeight: [8, 17] as const,
+  orchardHeight: [5, 8] as const,
+  /** Chunk size for culling and the distance switch (m). */
+  chunk: 500,
+  colours: {
+    trunk: 0x5a4330,
+    conifer: [0x1f4424, 0x2a5530],
+    broadleaf: [0x3d6b2c, 0x52803a],
+    orchard: [0x5a8a3a, 0x6e9a44],
+  },
 };

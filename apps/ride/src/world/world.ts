@@ -34,7 +34,9 @@ export class World {
   }
 
   private async loadTiles(onTile: (t: TileMesh, done: number, total: number) => void): Promise<void> {
-    const files = Object.values(this.manifest.levels['0'] ?? {});
+    // coarse levels first: the panorama is up quickly, the detail follows
+    const levels = Object.keys(this.manifest.levels).map(Number).sort((a, b) => b - a);
+    const files = levels.flatMap((l) => Object.values(this.manifest.levels[String(l)] ?? {}).map((f) => `L${l}/${f}`));
     const worker = new Worker(new URL('../workers/world-worker.ts', import.meta.url), { type: 'module' });
     const [e0, n0] = this.manifest.origin;
     let done = 0;
@@ -43,11 +45,12 @@ export class World {
       worker.onerror = (e) => reject(new Error(e.message));
       worker.onmessage = (ev: MessageEvent<TileMesh>) => {
         this.tiles.push(ev.data);
+        this.tiles.sort((a, b) => a.level - b.level); // finest first for height queries
         onTile(ev.data, ++done, files.length);
         if (done === files.length) resolve();
       };
       files.forEach(async (file, id) => {
-        const buffer = await (await fetch(`${this.base}L0/${file}`)).arrayBuffer();
+        const buffer = await (await fetch(this.base + file)).arrayBuffer();
         const req: TileRequest = { id, buffer, e0, n0 };
         worker.postMessage(req, [buffer]);
       });
