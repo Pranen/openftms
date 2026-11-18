@@ -1,0 +1,192 @@
+{
+ "buildHash": "4f22f651638a",
+ "classes": [
+  "cycleway",
+  "path",
+  "track",
+  "residential",
+  "living_street",
+  "unclassified",
+  "tertiary",
+  "secondary",
+  "primary"
+ ],
+ "edges": 815,
+ "format": 1,
+ "heightOffset": 422.0,
+ "heightScale": 0.05,
+ "nodes": 655,
+ "origin": [
+  2754000.0,
+  1222000.0
+ ],
+ "profileStep": 5.0,
+ "roadHalfWidth": [
+  1.5,
+  1.2,
+  1.6,
+  2.6,
+  2.4,
+  2.6,
+  3.0,
+  3.3,
+  3.6
+ ],
+ "routes": [
+  {
+   "bit": 0,
+   "name": "Halatrail",
+   "network": "",
+   "ref": ""
+  },
+  {
+   "bit": 1,
+   "name": "",
+   "network": "lcn",
+   "ref": ""
+  },
+  {
+   "bit": 2,
+   "name": "Eschnerberg",
+   "network": "lcn",
+   "ref": ""
+  },
+  {
+   "bit": 3,
+   "name": "Liechtensteiner Rheintalroute",
+   "network": "rcn",
+   "ref": "35"
+  }
+ ],
+ "sections": {
+  "adjEntries": [
+   44424,
+   1630,
+   "u4"
+  ],
+  "adjOffsets": [
+   41800,
+   656,
+   "u4"
+  ],
+  "edgeAttrs": [
+   15696,
+   815,
+   "u4"
+  ],
+  "edgeFrom": [
+   5904,
+   815,
+   "u4"
+  ],
+  "edgeGeomCount": [
+   25488,
+   815,
+   "u4"
+  ],
+  "edgeGeomStart": [
+   22224,
+   815,
+   "u4"
+  ],
+  "edgeLength": [
+   12432,
+   815,
+   "u4"
+  ],
+  "edgeName": [
+   32016,
+   815,
+   "u4"
+  ],
+  "edgeOsmWay": [
+   35280,
+   815,
+   "f8"
+  ],
+  "edgeProfStart": [
+   28752,
+   815,
+   "u4"
+  ],
+  "edgeRoutes": [
+   18960,
+   815,
+   "u4"
+  ],
+  "edgeTo": [
+   9168,
+   815,
+   "u4"
+  ],
+  "geomX": [
+   50944,
+   5073,
+   "i4"
+  ],
+  "geomZ": [
+   71240,
+   5073,
+   "i4"
+  ],
+  "nameBytes": [
+   145488,
+   2840,
+   "u1"
+  ],
+  "nameOffsets": [
+   144448,
+   259,
+   "u4"
+  ],
+  "nodeFlags": [
+   5248,
+   655,
+   "u1"
+  ],
+  "nodeX": [
+   0,
+   655,
+   "i4"
+  ],
+  "nodeZ": [
+   2624,
+   655,
+   "i4"
+  ],
+  "profile": [
+   91536,
+   26309,
+   "u2"
+  ],
+  "secEdge": [
+   144160,
+   18,
+   "u4"
+  ],
+  "secEnd": [
+   144304,
+   18,
+   "u4"
+  ],
+  "secFlags": [
+   144376,
+   18,
+   "u4"
+  ],
+  "secStart": [
+   144232,
+   18,
+   "u4"
+  ]
+ },
+ "surfaces": [
+  "asphalt",
+  "concrete",
+  "paving",
+  "fine_gravel",
+  "gravel",
+  "unpaved",
+  "unknown"
+ ]
+}
