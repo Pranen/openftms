@@ -6,6 +6,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "li-auto",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["../li-auto/node_modules/vite/bin/vite.js", "../li-auto", "--port", "5181", "--strictPort"],
+      "port": 5181
+    },
+    {
+      "name": "ski",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["../ski/node_modules/vite/bin/vite.js", "../ski", "--port", "5182", "--strictPort"],
+      "port": 5182
     }
   ]
 }
