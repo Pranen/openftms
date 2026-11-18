@@ -1,6 +1,7 @@
 {
  "attribution": [
   "Höhen: © swisstopo (swissALTI3D, OGD)",
+  "Panorama: Copernicus DEM © DLR e.V. 2010-2014 und © Airbus Defence and Space GmbH 2014-2018, bereitgestellt im Rahmen von COPERNICUS durch die EU und die ESA",
   "Strassen, Bodenbedeckung, Gebäude: © OpenStreetMap-Mitwirkende (ODbL)"
  ],
  "box": [
@@ -12,16 +13,32 @@
  "format": 1,
  "frame": "x = E - E0, y = height, z = N0 - N",
  "graph": {
-  "bin": "graph.4f22f651.bin",
-  "buildHash": "4f22f651638a",
-  "json": "graph.4f22f651.json"
+  "bin": "graph.213d069b.bin",
+  "buildHash": "213d069b80db",
+  "json": "graph.213d069b.json"
+ },
+ "levelInfo": {
+  "0": {
+   "cell": 7.8125,
+   "size": 2000.0
+  },
+  "4": {
+   "cell": 250.0,
+   "size": 64000.0
+  }
  },
  "levels": {
   "0": {
-   "1378_615": "1378_615.29709889.bin",
-   "1378_616": "1378_616.f8c738dd.bin",
-   "1379_615": "1379_615.d8fa8e39.bin",
-   "1379_616": "1379_616.e09d514a.bin"
+   "1378_615": "1378_615.72279567.bin",
+   "1378_616": "1378_616.3ada6234.bin",
+   "1379_615": "1379_615.abcc6b22.bin",
+   "1379_616": "1379_616.b504ab3d.bin"
+  },
+  "4": {
+   "42_18": "42_18.bbe60f23.bin",
+   "42_19": "42_19.76713c82.bin",
+   "43_18": "43_18.28e44750.bin",
+   "43_19": "43_19.2661eea2.bin"
   }
  },
  "origin": [

@@ -23,6 +23,7 @@ SURFACES = ["asphalt", "concrete", "paving", "fine_gravel", "gravel", "unpaved",
 ATTR_ACCESS_FWD = 1 << 7
 ATTR_ACCESS_BWD = 1 << 8
 ATTR_CYCLELANE = 1 << 9
+ATTR_ONEWAY = 1 << 10  # one carriageway of a one-way road (narrower band, no centre line)
 SEC_BRIDGE = 1
 SEC_TUNNEL = 2
 SEC_GALLERY = 4
@@ -38,9 +39,22 @@ JUNCTION_MERGE = 15.0  # m: shorter edges collapse into one decision point
 STUB_MIN = 20.0  # m: shorter dead ends are dropped
 SMOOTH_WINDOW = 5  # profile samples (25 m)
 NODE_BLEND = 40.0  # m over which an edge end is pulled to its node height
+END_BLEND = 35.0  # m over which an edge end is bent to its moved junction node (no kink at the junction)
+SIDE_DIST = 12.0  # m: a cycleway/path this close to a road and parallel to it is a sidepath
+SIDE_DIST_TAGGED = 20.0  # m: the same for ways tagged as sidepath / sidewalk
+SIDE_ANGLE = 25.0  # deg: max angle between sidepath and road
+SIDE_MIN = 30.0  # m: shorter parallel stretches (crossings, short joins) stay
+SIDE_CONNECT = 25.0  # m: a remaining piece of a cut sidepath reconnects to a road node this close
+SPLIT_GAP = 30.0  # m: one-way carriageway pairs whose ends are this close merge into one road
+SPLIT_MAX = 250.0  # m: only short splits (islands at junctions and roundabouts)
+MAJOR = {"residential", "living_street", "unclassified", "tertiary", "tertiary_link", "secondary", "secondary_link",
+         "primary", "primary_link"}
+ONEWAY_WIDTH = 0.6  # band width factor of one-way carriageways (dual carriageways, ramps, roundabouts)
 
-NO_BIKE = {"no", "use_sidepath", "private", "dismount"}
+# use_sidepath is ridable here: the parallel cycleway is dropped (one network, the bigger road wins)
+NO_BIKE = {"no", "private", "dismount"}
 BIKE_OK = {"yes", "designated", "permissive"}
+SOFT = {"grass", "ground", "dirt", "earth", "mud", "sand", "grass_paver", "woodchips"}
 PAVED = {"asphalt", "concrete", "paved", "concrete:plates", "paving_stones", "sett", "chipseal"}
 
 
@@ -58,9 +72,17 @@ def road_class(t: dict[str, str]) -> int | None:
     if hw in ("path", "footway", "pedestrian", "bridleway"):
         return 1 if bike in BIKE_OK else None
     if hw == "track":
-        if t.get("tracktype") in ("grade1", "grade2", "grade3") or t.get("surface") in PAVED:
+        # farm roads (the Riet): ridable unless marked rough; no tracktype is the common case
+        if t.get("surface") in PAVED:
             return 2
-        return None
+        if t.get("tracktype") in ("grade4", "grade5") or t.get("surface") in SOFT:
+            return None
+        return 2
+    if hw == "service":
+        # plain service roads (farm and industrial access); driveways, parking aisles etc. are not
+        if t.get("service") or t.get("access") in ("no", "private", "customers", "delivery"):
+            return 2 if bike in BIKE_OK else None
+        return None if t.get("surface") in SOFT else 2
     return {"residential": 3, "living_street": 4, "unclassified": 5, "tertiary": 6, "tertiary_link": 6,
             "secondary": 7, "secondary_link": 7, "primary": 8, "primary_link": 8}.get(hw)
 
@@ -79,6 +101,8 @@ def surface_of(t: dict[str, str], cls: int) -> int:
         return 4
     if s in ("unpaved", "dirt", "ground", "earth", "grass", "mud", "sand"):
         return 5
+    if cls == 2 and t.get("highway") == "service":
+        return 0
     if cls == 2:
         return {"grade1": 0, "grade2": 3, "grade3": 4}.get(t.get("tracktype", ""), 6)
     return 0 if cls >= 3 or cls == 0 else 6
@@ -191,6 +215,8 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
                 runs.append((w.nodes[i:j + 1], w.en[i:j + 1], w.tags, cls, wid))
             i = j + 1
 
+    runs = _drop_sidepaths(runs, osm)
+
     # 2. split at shared nodes
     use = defaultdict(int)
     for nodes, *_ in runs:
@@ -206,7 +232,8 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
             rbits |= route_bit.get(k, 0)
         lane = ATTR_CYCLELANE if tags.get("cycleway", "") in ("lane", "track") or tags.get("cycleway:right") == "lane" \
             or tags.get("cycleway:both") == "lane" else 0
-        attrs = access_bits(tags) | lane
+        car_oneway = tags.get("oneway") in ("yes", "1", "true", "-1") or tags.get("junction") in ("roundabout", "circular")
+        attrs = access_bits(tags) | lane | (ATTR_ONEWAY if car_oneway else 0)
         surf = surface_of(tags, cls)
         st = structure_flags(tags)
         name = tags.get("name", "") or tags.get("ref", "")
@@ -223,10 +250,15 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
             if min(e - e_min, e_max - e, n - n_min, n_max - n) < 30:
                 boundary.add(nodes[k])
 
+    ring_nodes = {n for ring in roundabout_nodes for n in ring}
+    pieces, joins = _merge_splits(pieces, ring_nodes)
+
     # 3. junction clusters: roundabouts and short connectors collapse into one node
     uf = _UF()
     for p in pieces:
         uf.find(p.a), uf.find(p.b)
+    for x, y in joins:
+        uf.union(x, y)
     rb_roots: set[int] = set()
     for ring in roundabout_nodes:
         for nid in ring[1:]:
@@ -239,15 +271,30 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
     members = defaultdict(list)
     for nid in list(uf.p):
         members[uf.find(nid)].append(nid)
-    cpos = {c: np.mean([pos[n] for n in ms], axis=0) for c, ms in members.items()}
+    # node position: on the most important road of the cluster (a side path or a parallel cycleway
+    # joined by a short connector bends to the main road, not the main road halfway to the path);
+    # a roundabout sits at the centre of its ring
+    node_cls: dict[int, int] = defaultdict(lambda: -1)
+    for p in pieces:
+        for nid in (p.a, p.b):
+            node_cls[nid] = max(node_cls[nid], p.cls)
+    ring_of: dict[int, list[int]] = defaultdict(list)
+    for ring in roundabout_nodes:
+        ring_of[uf.find(ring[0])] += ring
+    cpos = {}
+    for c, ms in members.items():
+        if c in ring_of:
+            cpos[c] = np.mean([pos[n] for n in ring_of[c]], axis=0)
+            continue
+        top = max(node_cls[n] for n in ms)
+        cpos[c] = np.mean([pos[n] for n in ms if node_cls[n] == top], axis=0)
 
     edges: list[Edge] = []
     for p in pieces:
         ca, cb = uf.find(p.a), uf.find(p.b)
         if ca == cb:
             continue  # inside a junction cluster
-        en = p.en.copy()
-        en[0], en[-1] = cpos[ca], cpos[cb]
+        en = _bend_ends(p.en, cpos[ca] - p.en[0], cpos[cb] - p.en[-1])
         edges.append(Edge(ca, cb, [(en, p.struct)], p.cls, p.surface, p.attrs, p.routes, p.name, p.way))
 
     def incident(es):
@@ -371,8 +418,164 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
 
     h_all = np.concatenate([h for _, h in profiles])
     h_offset = float(np.floor(h_all.min()) - 10)
+    # roundabout radius (mean distance of its ring vertices to the node): drawn as a ring with an island
+    ring_pts = defaultdict(list)
+    for ring in roundabout_nodes:
+        ring_pts[uf.find(ring[0])] += [pos[n] for n in ring]
+    rb_radius = {c: float(np.mean(np.hypot(*(np.array(ring_pts[c]) - cpos[c]).T))) for c in rb_roots if c in nidx}
     return dict(edges=edges, profiles=profiles, sections=sections, node_ids=node_ids, nidx=nidx, cpos=cpos,
-                node_h=nh, rb_roots=rb_roots, boundary=bclusters, route_keys=route_keys, h_offset=h_offset)
+                node_h=nh, rb_roots=rb_roots, rb_radius=rb_radius, boundary=bclusters, route_keys=route_keys, h_offset=h_offset)
+
+
+def _drop_sidepaths(runs, osm: OsmData):
+    """Cycleways and paths running alongside a road are dropped there: one network, the bigger road
+    wins (no parallel lanes with connectors every few metres, cleaner junctions and roundabouts).
+    Only the parallel stretches go; where the path leaves the road, the rest stays and is joined to
+    the nearest road node."""
+    from scipy.spatial import cKDTree
+
+    pts, tans = [], []
+    vpos, vid = [], []
+    for w in osm.ways.values():
+        if w.tags.get("highway") not in MAJOR or w.tags.get("area") == "yes" or len(w.en) < 2:
+            continue
+        s = cumulative(w.en)
+        ss = np.arange(0, s[-1] + 1e-9, 2.0)
+        pts.append(sample_at(w.en, ss))
+        seg = np.clip(np.searchsorted(s, ss, side="right") - 1, 0, len(w.en) - 2)
+        d = w.en[seg + 1] - w.en[seg]
+        tans.append(d / np.maximum(np.hypot(*d.T), 1e-9)[:, None])
+        vpos.append(w.en)
+        vid += list(w.nodes)
+    if not pts:
+        return runs
+    road = cKDTree(np.vstack(pts))
+    tan = np.vstack(tans)
+    vtree = cKDTree(np.vstack(vpos))
+    cos_max = np.cos(np.radians(SIDE_ANGLE))
+
+    out = []
+    for nodes, en, tags, cls, wid in runs:
+        if cls > 1:
+            out.append((nodes, en, tags, cls, wid))
+            continue
+        tagged = tags.get("footway") == "sidewalk" or tags.get("path") == "sidewalk" \
+            or tags.get("is_sidepath") == "yes" or tags.get("cycleway") == "sidepath"
+        dist = SIDE_DIST_TAGGED if tagged else SIDE_DIST
+        par = np.zeros(len(en) - 1, bool)
+        for k in range(len(en) - 1):
+            d = en[k + 1] - en[k]
+            L = float(np.hypot(*d))
+            if L <= 0:
+                par[k] = True
+                continue
+            q = en[k] + np.outer(np.linspace(0, 1, max(2, int(L / 2) + 1)), d)
+            dd, ii = road.query(q)
+            if np.any(dd > dist):
+                continue
+            par[k] = tagged or bool(np.all(np.abs(tan[ii] @ (d / L)) >= cos_max))
+        # drop only parallel stretches of at least SIDE_MIN
+        seglen = np.hypot(*np.diff(en, axis=0).T)
+        drop = np.zeros_like(par)
+        k = 0
+        while k < len(par):
+            if not par[k]:
+                k += 1
+                continue
+            j = k
+            while j + 1 < len(par) and par[j + 1]:
+                j += 1
+            if seglen[k:j + 1].sum() >= SIDE_MIN:
+                drop[k:j + 1] = True
+            k = j + 1
+        if not drop.any():
+            out.append((nodes, en, tags, cls, wid))
+            continue
+        k = 0
+        while k < len(drop):
+            if drop[k]:
+                k += 1
+                continue
+            j = k
+            while j + 1 < len(drop) and not drop[j + 1]:
+                j += 1
+            ns, pe = list(nodes[k:j + 2]), en[k:j + 2]
+            # rejoin the network where the parallel stretch was cut off
+            for at_start, cut in ((True, k > 0), (False, j + 1 < len(drop))):
+                if not cut:
+                    continue
+                d, i = vtree.query(pe[0] if at_start else pe[-1])
+                if d <= SIDE_CONNECT and vid[i] not in ns:
+                    p = vtree.data[i]
+                    if at_start:
+                        ns, pe = [vid[i]] + ns, np.vstack([p, pe])
+                    else:
+                        ns, pe = ns + [vid[i]], np.vstack([pe, p])
+            out.append((ns, pe, tags, cls, wid))
+            k = j + 1
+    return out
+
+
+def _merge_splits(pieces: list[Piece], ring_nodes: set[int]) -> tuple[list[Piece], list[tuple[int, int]]]:
+    """The two one-way halves of a road split around an island (approaches of roundabouts and
+    junctions) become one two-way road on their centre line. Returns the pieces and the node
+    pairs to join into one junction."""
+    def length(p: Piece) -> float:
+        return float(cumulative(p.en)[-1])
+
+    cand = [i for i, p in enumerate(pieces) if p.attrs & ATTR_ONEWAY and not (p.a in ring_nodes and p.b in ring_nodes)
+            and length(p) <= SPLIT_MAX]
+    used: set[int] = set()
+    joins: list[tuple[int, int]] = []
+    merged: dict[int, Piece] = {}
+    for x in cand:
+        if x in used:
+            continue
+        A = pieces[x]
+        best, best_d = None, SPLIT_GAP
+        for y in cand:
+            if y == x or y in used:
+                continue
+            B = pieces[y]
+            if B.name != A.name or B.cls != A.cls or B.way == A.way:
+                continue
+            la, lb = length(A), length(B)
+            if abs(la - lb) > 0.5 * max(la, lb):
+                continue
+            d = max(float(np.hypot(*(A.en[0] - B.en[-1]))), float(np.hypot(*(A.en[-1] - B.en[0]))))
+            if d < best_d:
+                best, best_d = y, d
+        if best is None:
+            continue
+        B = pieces[best]
+        n = max(len(A.en), len(B.en), int(max(length(A), length(B)) / 2) + 2)
+        la, lb = length(A), length(B)
+        mid = 0.5 * (sample_at(A.en, np.linspace(0, la, n)) + sample_at(B.en[::-1], np.linspace(0, lb, n)))
+        attrs = (A.attrs | B.attrs) & ~ATTR_ONEWAY | ATTR_ACCESS_FWD | ATTR_ACCESS_BWD
+        merged[x] = Piece(A.a, A.b, mid, A.cls, A.surface, attrs, A.struct | B.struct, A.routes | B.routes, A.name, A.way)
+        used |= {x, best}
+        joins += [(A.a, B.b), (A.b, B.a)]
+    out = [merged.get(i, p) for i, p in enumerate(pieces) if i not in used or i in merged]
+    return out, joins
+
+
+def _bend_ends(en: np.ndarray, da: np.ndarray, db: np.ndarray) -> np.ndarray:
+    """Move the end points by da / db, spreading the shift smoothly over END_BLEND m (densified there),
+    instead of only moving the last vertex: that kinked the road at every merged junction."""
+    s = cumulative(en)
+    L = float(s[-1])
+    if L <= 0:
+        return en + da
+    b = min(END_BLEND, L)
+    # densify to 2 m inside the blend zones so the bend is a curve, not one long tilted segment
+    extra = np.r_[np.arange(0, b, 2.0), np.arange(L - b, L, 2.0)[1:]]
+    ss = np.unique(np.r_[s, extra[(extra > 0) & (extra < L)]])
+    out = sample_at(en, ss)
+    ta = np.clip(1 - ss / b, 0, 1)
+    tb = np.clip(1 - (L - ss) / b, 0, 1)
+    wa = ta * ta * (3 - 2 * ta)
+    wb = tb * tb * (3 - 2 * tb)
+    return out + wa[:, None] * da[None, :] + wb[:, None] * db[None, :]
 
 
 def boundary_clusters(boundary: set[int], uf: _UF) -> set[int]:
@@ -467,6 +670,8 @@ def encode(g: dict) -> tuple[bytes, dict]:
         "origin": [E0, N0],
         "classes": CLASSES,
         "roadHalfWidth": ROAD_HALF_WIDTH,
+        "onewayWidth": ONEWAY_WIDTH,
+        "roundabouts": sorted([g["nidx"][c], round(r, 1)] for c, r in g["rb_radius"].items()),
         "surfaces": SURFACES,
         "routes": [{"bit": i, "network": k[0], "ref": k[1], "name": k[2]} for i, k in enumerate(g["route_keys"])],
         "sections": table,
@@ -492,5 +697,5 @@ def write(g: dict, out_dir) -> dict:
     for old in out_dir.glob("graph.*"):
         old.unlink()
     (out_dir / f"graph.{h}.bin").write_bytes(blob)
-    (out_dir / f"graph.{h}.json").write_text(json.dumps(meta, indent=1, sort_keys=True), encoding="utf-8")
+    (out_dir / f"graph.{h}.json").write_text(json.dumps(meta, indent=1, sort_keys=True), encoding="utf-8", newline="\n")
     return {"bin": f"graph.{h}.bin", "json": f"graph.{h}.json", "buildHash": meta["buildHash"]}

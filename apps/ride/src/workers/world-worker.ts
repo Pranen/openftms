@@ -17,6 +17,7 @@ export interface TileRequest {
 
 export interface TileMesh {
   id: number;
+  level: number;
   ix: number;
   iy: number;
   /** World position of node (0, 0) (NW corner). */
@@ -25,6 +26,10 @@ export interface TileMesh {
   n: number;
   cell: number;
   heights: Float32Array;
+  /** Land cover code per node (same layout as `heights`). */
+  codes: Uint8Array;
+  /** Building boxes in world x/z: cx, cz, angle, half length, half width (5 floats each). */
+  boxes: Float32Array;
   terrain: { position: Float32Array; color: Float32Array };
   buildings: { position: Float32Array; color: Float32Array };
   buildingCount: number;
@@ -149,6 +154,7 @@ self.onmessage = (ev: MessageEvent<TileRequest>) => {
   const z0 = n0 - (t.header.originN + cell * (n - 1));
   const mesh: TileMesh = {
     id,
+    level: t.header.level,
     ix: t.header.ix,
     iy: t.header.iy,
     x0,
@@ -156,12 +162,16 @@ self.onmessage = (ev: MessageEvent<TileRequest>) => {
     n,
     cell,
     heights: t.heights,
+    codes: t.codes,
+    boxes: new Float32Array(t.buildings.flatMap((b) => [x0 + b.cx, z0 + b.cz, b.angle, b.halfLength, b.halfWidth])),
     terrain: terrain(t.heights, t.codes, n, cell, x0, z0, t.header.ix, t.header.iy),
     buildings: buildings(t.buildings, x0, z0),
     buildingCount: t.buildings.length,
   };
   (self as unknown as Worker).postMessage(mesh, [
     mesh.heights.buffer,
+    mesh.codes.buffer,
+    mesh.boxes.buffer,
     mesh.terrain.position.buffer,
     mesh.terrain.color.buffer,
     mesh.buildings.position.buffer,
