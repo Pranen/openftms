@@ -1,4 +1,4 @@
-"""Build the Ride world (graph + L0 tiles + manifest) for one entry of worlds.json.
+"""Build the Ride world (graph + L0 tiles + coarse levels L1–L4 + manifest) for one entry of worlds.json.
 
     .venv/Scripts/python build.py m1 [--out ../../apps/ride/public/world]
 
@@ -23,7 +23,7 @@ from ride_pipeline.sources import dem_tiles, osm_clip, osm_extract
 HERE = Path(__file__).resolve().parent
 ATTRIBUTION = [
     "Höhen: © swisstopo (swissALTI3D, OGD)",
-    "Panorama: Copernicus DEM © DLR e.V. 2010-2014 und © Airbus Defence and Space GmbH 2014-2018, bereitgestellt im Rahmen von COPERNICUS durch die EU und die ESA",
+    "Grobe Stufen, Panorama: Copernicus DEM © DLR e.V. 2010-2014 und © Airbus Defence and Space GmbH 2014-2018, bereitgestellt im Rahmen von COPERNICUS durch die EU und die ESA",
     "Strassen, Bodenbedeckung, Gebäude: © OpenStreetMap-Mitwirkende (ODbL)",
 ]
 
@@ -41,9 +41,14 @@ def main() -> None:
 
     print("sources")
     osm_paths = [osm_clip(osm_extract(r), f"{args.world}-{r}", e_min, n_min, e_max, n_max) for r in cfg["osm"]]
+    levels_cfg = {int(k): tuple(v) for k, v in cfg.get("levels", {}).items()}
+    region = tuple(cfg["region"])
+    l4 = P.tile_indices(region, P.SIZE)  # the panorama tiles span the widest area of all levels
+    cop = P.Copernicus.for_box((min(i for i, _ in l4) * P.SIZE, min(j for _, j in l4) * P.SIZE,
+                                (max(i for i, _ in l4) + 1) * P.SIZE, (max(j for _, j in l4) + 1) * P.SIZE))
     margin = 60
     dem = Dem(dem_tiles(e_min - margin, n_min - margin, e_max + margin, n_max + margin),
-              e_min - margin, n_min - margin, e_max + margin, n_max + margin)
+              e_min - margin, n_min - margin, e_max + margin, n_max + margin, fill=cop.sample_lv95)
     osm = read(osm_paths)
     print(f"  {len(osm.ways)} highway ways, {len(osm.areas)} areas, {len(osm.routes)} route ways")
 
@@ -66,9 +71,23 @@ def main() -> None:
                                                       (b"BLDG", bldg)])
             level0[f"{ix}_{iy}"] = name
             print(f"  L0/{name}  h {h.min():.0f}-{h.max():.0f} m, {int.from_bytes(bldg[:4], 'little')} buildings")
+    for old in (out / "L0").glob("*.bin"):
+        if old.name not in level0.values():
+            old.unlink()
 
-    print("panorama (Copernicus)")
-    level4 = P.build(tuple(cfg["region"]), (e_min, n_min, e_max, n_max), out)
+    levels: dict[str, dict[str, str]] = {"0": dict(sorted(level0.items()))}
+    level_info = {"0": {"size": T.TILE, "cell": T.CELL}}
+    for lvl in sorted(levels_cfg):
+        box = levels_cfg[lvl]
+        print(f"level {lvl} (Copernicus{', OSM land cover' if lvl == 1 else ''})")
+        areas = None
+        if lvl == 1:  # land cover from OSM where mapped (the region extracts, clipped to the L1 box)
+            areas = read([osm_clip(osm_extract(r), f"{args.world}-L1-{r}", *box) for r in cfg["osm"]]).areas
+        levels[str(lvl)] = dict(sorted(P.build_level(lvl, box, cop, out, areas).items()))
+        level_info[str(lvl)] = {"size": P.SIZES[lvl], "cell": P.cell(lvl)}
+    print("panorama L4 (Copernicus)")
+    levels["4"] = dict(sorted(P.build_level(4, region, cop, out).items()))
+    level_info["4"] = {"size": P.SIZE, "cell": P.CELL}
 
     manifest = {
         "format": 1,
@@ -77,8 +96,8 @@ def main() -> None:
         "box": cfg["box"],
         "spawn": cfg["spawn"],
         "tile": {"size": T.TILE, "n": T.N, "cell": T.CELL},
-        "levelInfo": {"0": {"size": T.TILE, "cell": T.CELL}, str(P.LEVEL): {"size": P.SIZE, "cell": P.CELL}},
-        "levels": {"0": dict(sorted(level0.items())), str(P.LEVEL): dict(sorted(level4.items()))},
+        "levelInfo": level_info,
+        "levels": levels,
         "graph": graph_files,
         "attribution": ATTRIBUTION,
     }

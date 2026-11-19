@@ -12,7 +12,10 @@ from scipy import ndimage
 
 
 class Dem:
-    def __init__(self, paths: list[Path], e_min: float, n_min: float, e_max: float, n_max: float, cell: float = 2.0):
+    def __init__(self, paths: list[Path], e_min: float, n_min: float, e_max: float, n_max: float, cell: float = 2.0,
+                 fill=None):
+        """fill(e, n) -> heights: source for cells swissALTI3D does not cover (Austria next to the
+        border: Copernicus until the BEV data comes with M2). Without it, more than 2 % holes fail."""
         datasets = [rasterio.open(p) for p in paths]
         try:
             arr, transform = merge(datasets, bounds=(e_min, n_min, e_max, n_max), res=cell, nodata=-9999)
@@ -21,6 +24,13 @@ class Dem:
                 d.close()
         h = arr[0].astype(np.float64)
         bad = h < -1000
+        if bad.any() and fill is not None:
+            rows, cols = np.nonzero(bad)
+            e = transform.c + (cols + 0.5) * cell
+            n = transform.f - (rows + 0.5) * cell
+            h[rows, cols] = fill(e, n)
+            print(f"  {bad.mean():.1%} of the elevation grid filled from the fallback source")
+            bad = h < -1000
         if bad.any():
             if bad.mean() > 0.02:
                 raise RuntimeError(f"{bad.mean():.1%} of the elevation grid has no data")

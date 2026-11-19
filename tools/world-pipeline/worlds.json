@@ -1,9 +1,45 @@
 {
   "m1": {
-    "description": "Vertical slice M1: 2 x 2 L0 tiles around Eschen/Schellenberg",
-    "box": [2756000, 1230000, 2760000, 1234000],
-    "region": [2739000, 1199000, 2772000, 1246000],
-    "osm": ["liechtenstein", "switzerland"],
-    "spawn": [2757850, 1230990]
+    "description": "M1 + streaming test: 3 x 4 L0 tiles Eschen/Schellenberg - Schaan/Planken/Gafadura, coarse levels L1-L3 around",
+    "box": [
+      2756000,
+      1226000,
+      2762000,
+      1234000
+    ],
+    "region": [
+      2739000,
+      1199000,
+      2772000,
+      1246000
+    ],
+    "osm": [
+      "liechtenstein",
+      "switzerland"
+    ],
+    "spawn": [
+      2757850,
+      1230990
+    ],
+    "levels": {
+      "1": [
+        2752000,
+        1220000,
+        2768000,
+        1236000
+      ],
+      "2": [
+        2744000,
+        1216000,
+        2776000,
+        1248000
+      ],
+      "3": [
+        2720000,
+        1200000,
+        2784000,
+        1264000
+      ]
+    }
   }
 }

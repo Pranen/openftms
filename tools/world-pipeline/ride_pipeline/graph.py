@@ -12,6 +12,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 import numpy as np
+from scipy.ndimage import median_filter
 
 from .dem import Dem
 from .geo import E0, N0, cumulative, sample_at, simplify, smooth_1d
@@ -38,6 +39,9 @@ HEIGHT_SCALE = 0.05  # m per profile unit
 JUNCTION_MERGE = 15.0  # m: shorter edges collapse into one decision point
 STUB_MIN = 20.0  # m: shorter dead ends are dropped
 SMOOTH_WINDOW = 5  # profile samples (25 m)
+GRADE_CAP_ROAD = 18.0  # %: max 20 m grade of a road profile before extra smoothing stops
+GRADE_CAP_PATH = 28.0  # %: the same for tracks and paths
+GRADE_DROP_PATH = 40.0  # %: tracks and paths steeper than this (20 m, smoothed) are left out
 NODE_BLEND = 40.0  # m over which an edge end is pulled to its node height
 END_BLEND = 35.0  # m over which an edge end is bent to its moved junction node (no kink at the junction)
 SIDE_DIST = 12.0  # m: a cycleway/path this close to a road and parallel to it is a sidepath
@@ -70,6 +74,9 @@ def road_class(t: dict[str, str]) -> int | None:
     if hw == "cycleway":
         return 0
     if hw in ("path", "footway", "pedestrian", "bridleway"):
+        # mountain trails (hiking grade above T1, MTB scale 2+) are no place for a trainer ride
+        if t.get("sac_scale", "hiking") != "hiking" or t.get("mtb:scale", "0")[:1] not in ("", "0", "1"):
+            return None
         return 1 if bike in BIKE_OK else None
     if hw == "track":
         # farm roads (the Riet): ridable unless marked rough; no tracktype is the common case
@@ -351,6 +358,20 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
             merged = True
             break
 
+    # 6a. paths and tracks steeper than anything ridable on a trainer (short shortcuts up a slope)
+    def too_steep(e: Edge) -> bool:
+        if e.cls > 2:
+            return False
+        en = e.en
+        L = float(cumulative(en)[-1])
+        ss = np.arange(0, L + 1e-9, PROFILE_STEP)
+        if len(ss) < 2:
+            return False
+        p = sample_at(en, ss)
+        h = smooth_1d(dem.sample(p[:, 0], p[:, 1]), SMOOTH_WINDOW)
+        return _max_grade(ss, h) > GRADE_DROP_PATH
+    edges = [e for e in edges if not too_steep(e)]
+
     # 6. largest connected component
     adj = defaultdict(set)
     for e in edges:
@@ -400,7 +421,14 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
                     h1 = float(np.interp(s1, s, h))
                     h[m] = h0 + (h1 - h0) * (s[m] - s0) / max(s1 - s0, 1e-6)
             acc += pl
-        h = smooth_1d(h, SMOOTH_WINDOW)
+        h = smooth_1d(median_filter(h, 3, mode="nearest"), SMOOTH_WINDOW)
+        # DEM steps (culverts, gullies, walls next to the road) make short ramps no road has:
+        # smooth on until the 20 m grade is plausible for the class (true long grades survive)
+        cap = GRADE_CAP_ROAD if e.cls >= 3 else GRADE_CAP_PATH
+        for _ in range(40):
+            if _max_grade(s, h) <= cap:
+                break
+            h = smooth_1d(h, SMOOTH_WINDOW)
         profiles.append((s, h))
 
     node_h = defaultdict(list)
@@ -680,14 +708,19 @@ def encode(g: dict) -> tuple[bytes, dict]:
     return bytes(out), meta
 
 
+def _max_grade(s: np.ndarray, h: np.ndarray, window: float = 20.0) -> float:
+    """Steepest grade (%) over `window` m along a profile."""
+    j = np.searchsorted(s, s + window)
+    ok = j < len(s)
+    if not ok.any():
+        return 0.0
+    return float(np.abs((h[j[ok]] - h[ok]) / (s[j[ok]] - s[ok])).max() * 100)
+
+
 def stats(g: dict) -> str:
     L = sum(s[-1] for s, _ in g["profiles"]) / 1000
-    gmax = 0.0
-    for s, h in g["profiles"]:  # grade over 20 m windows (single 5 m steps are noisy at edge ends)
-        j = np.searchsorted(s, s + 20)
-        ok = j < len(s)
-        if ok.any():
-            gmax = max(gmax, float(np.abs((h[j[ok]] - h[ok]) / (s[j[ok]] - s[ok])).max() * 100))
+    # grade over 20 m windows (single 5 m steps are noisy at edge ends)
+    gmax = max((_max_grade(s, h) for s, h in g["profiles"]), default=0.0)
     return f"{len(g['node_ids'])} nodes, {len(g['edges'])} edges, {L:.1f} km, {len(g['sections'])} structures, max grade (20 m) {gmax:.1f} %"
 
 

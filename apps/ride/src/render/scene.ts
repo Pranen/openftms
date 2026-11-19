@@ -14,7 +14,7 @@ function lights(scene: THREE.Scene): void {
 
 /**
  * Two scenes, drawn in two depth passes (PLAN.md, Renderer): `far` holds the sky and the
- * coarse levels (panorama), `near` the detailed L0 world, drawn on top. Both share the haze.
+ * levels L2–L4, `near` L0 and L1 with roads, buildings and trees, drawn on top. Both share the haze.
  */
 export function createScenes(): { near: THREE.Scene; far: THREE.Scene } {
   const near = new THREE.Scene();
@@ -40,22 +40,53 @@ export function createScenes(): { near: THREE.Scene; far: THREE.Scene } {
   return { near, far };
 }
 
-function geometry(position: Float32Array, col: Float32Array): THREE.BufferGeometry {
+function geometry(position: Float32Array, col: Float32Array | Uint8Array): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(position, 3));
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  // terrain colours come as normalised RGBA bytes, the rest as float RGB
+  g.setAttribute('color', col instanceof Uint8Array ? new THREE.BufferAttribute(col, 4, true) : new THREE.BufferAttribute(col, 3));
   g.computeBoundingSphere();
   return g;
 }
 
 const terrainMat = retroMaterial();
-const panoramaMat = retroMaterial({ curvature: true });
+const coarseMat = retroMaterial({ curvature: true });
 const buildingMat = retroMaterial({ side: THREE.DoubleSide });
 const roadMat = retroMaterial({ side: THREE.DoubleSide, polygonOffset: 2, snap: false });
 
-export function addTile(scene: THREE.Scene, t: TileMesh): void {
-  scene.add(new THREE.Mesh(geometry(t.terrain.position, t.terrain.color), t.level === 0 ? terrainMat : panoramaMat));
-  if (t.buildings.position.length) scene.add(new THREE.Mesh(geometry(t.buildings.position, t.buildings.color), buildingMat));
+/** The meshes of one streamed tile: terrain chunks (hidden where a finer tile is loaded) and buildings. */
+export interface TileView {
+  group: THREE.Group;
+  chunks: THREE.Mesh[];
+}
+
+export function tileView(t: TileMesh): TileView {
+  const group = new THREE.Group();
+  const chunks = t.terrain.map((c) => new THREE.Mesh(geometry(c.position, c.color), t.level === 0 ? terrainMat : coarseMat));
+  for (const m of chunks) group.add(m);
+  if (t.buildings.position.length) group.add(new THREE.Mesh(geometry(t.buildings.position, t.buildings.color), buildingMat));
+  return { group, chunks };
+}
+
+export function disposeGroup(g: THREE.Object3D): void {
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose();
+  });
+  g.removeFromParent();
+}
+
+/** Triangle buffers per L0 tile, so roads come and go with their tile. */
+type Sink = (x: number, z: number) => { pos: number[]; col: number[] };
+
+function tileSink(origin: [number, number], size: number): { sink: Sink; buckets: Map<string, { pos: number[]; col: number[] }> } {
+  const buckets = new Map<string, { pos: number[]; col: number[] }>();
+  const sink: Sink = (x, z) => {
+    const key = `0/${Math.floor((x + origin[0]) / size)}_${Math.floor((origin[1] - z) / size)}`;
+    let b = buckets.get(key);
+    if (!b) buckets.set(key, (b = { pos: [], col: [] }));
+    return b;
+  };
+  return { sink, buckets };
 }
 
 /** Point and left normal at arc length s; the normal from a central difference (no kinks at polyline vertices). */
@@ -81,8 +112,7 @@ function band(
   width: number,
   lift: number,
   c: THREE.Color,
-  pos: number[],
-  col: number[],
+  sink: Sink,
   step = 3,
 ): void {
   const L = g.length(e);
@@ -98,6 +128,7 @@ function band(
     if (prev) {
       const [ax, ay, az, bx, by, bz] = prev as [number, number, number, number, number, number];
       const [cx, cy, cz, dx, dy, dz] = cur as [number, number, number, number, number, number];
+      const { pos, col } = sink((ax + dx) / 2, (az + dz) / 2);
       pos.push(ax, ay, az, bx, by, bz, cx, cy, cz, bx, by, bz, dx, dy, dz, cx, cy, cz);
       for (let v = 0; v < 6; v++) col.push(c.r, c.g, c.b);
     }
@@ -125,12 +156,13 @@ function dashes(a: number, b: number, dash: number, gap: number): [number, numbe
 
 const roadMarkMat = retroMaterial({ side: THREE.DoubleSide, polygonOffset: 4, snap: false });
 
-/** Road bands of the whole ride network, built from the graph (same profile as the physics), with markings. */
-export function addRoads(scene: THREE.Scene, g: RouteGraph): void {
-  const pos: number[] = [];
-  const col: number[] = [];
-  const mpos: number[] = [];
-  const mcol: number[] = [];
+/**
+ * Road bands of the whole ride network, built from the graph (same profile as the physics), with
+ * markings; one group per L0 tile key (`0/ix_iy`), added to the scene while that tile is loaded.
+ */
+export function buildRoads(g: RouteGraph, origin: [number, number], tileSize: number): Map<string, THREE.Group> {
+  const { sink: road, buckets: roadB } = tileSink(origin, tileSize);
+  const { sink: mark, buckets: markB } = tileSink(origin, tileSize);
   const white = new THREE.Color(MARKING.white);
   const yellow = new THREE.Color(MARKING.yellow);
   const order = [...Array(g.edgeCount).keys()].sort((a, b) => g.edgeClass(a) - g.edgeClass(b));
@@ -146,7 +178,7 @@ export function addRoads(scene: THREE.Scene, g: RouteGraph): void {
     const surf = g.surface(e);
     const c = new THREE.Color(surf >= 3 && surf <= 5 ? GRAVEL_COLOR : (ROAD_COLOR[cls] ?? ROAD_COLOR_DEFAULT));
     const lift = RENDER.roadLift + cls * 0.01;
-    for (const [a, b] of stretches(g, e, 0)) band(g, e, a, b, 0, hw * 2, lift, c, pos, col, 4);
+    for (const [a, b] of stretches(g, e, 0)) band(g, e, a, b, 0, hw * 2, lift, c, road, 4);
     // markings only on paved roads
     if (surf > 2 || cls < 3) continue;
     const ml = lift + MARKING.lift;
@@ -158,20 +190,27 @@ export function addRoads(scene: THREE.Scene, g: RouteGraph): void {
     const lane = g.cycleLane(e);
     for (const [a, b] of stretches(g, e, gapAt(g.from(e)), gapAt(g.to(e)))) {
       if (cls >= MARKING.centreFromClass && twoWay)
-        for (const [d0, d1] of dashes(a, b, MARKING.dash, MARKING.gap)) band(g, e, d0, d1, 0, W, ml, white, mpos, mcol);
+        for (const [d0, d1] of dashes(a, b, MARKING.dash, MARKING.gap)) band(g, e, d0, d1, 0, W, ml, white, mark);
       for (const side of [1, -1]) {
         if (lane && (twoWay || side === -1)) {
           const o = side * (hw - MARKING.laneWidth);
-          for (const [d0, d1] of dashes(a, b, MARKING.laneDash, MARKING.laneGap)) band(g, e, d0, d1, o, W, ml, yellow, mpos, mcol);
+          for (const [d0, d1] of dashes(a, b, MARKING.laneDash, MARKING.laneGap)) band(g, e, d0, d1, o, W, ml, yellow, mark);
         } else if (cls >= MARKING.edgeFromClass) {
-          band(g, e, a, b, side * (hw - MARKING.edgeInset), W, ml, white, mpos, mcol);
+          band(g, e, a, b, side * (hw - MARKING.edgeInset), W, ml, white, mark);
         }
       }
     }
   }
-  roundabouts(g, rbRadius, pos, col, mpos, mcol);
-  scene.add(new THREE.Mesh(geometry(new Float32Array(pos), new Float32Array(col)), roadMat));
-  if (mpos.length) scene.add(new THREE.Mesh(geometry(new Float32Array(mpos), new Float32Array(mcol)), roadMarkMat));
+  roundabouts(g, rbRadius, road, mark);
+  const out = new Map<string, THREE.Group>();
+  for (const [key, b] of roadB) {
+    const group = new THREE.Group();
+    group.add(new THREE.Mesh(geometry(new Float32Array(b.pos), new Float32Array(b.col)), roadMat));
+    const m = markB.get(key);
+    if (m) group.add(new THREE.Mesh(geometry(new Float32Array(m.pos), new Float32Array(m.col)), roadMarkMat));
+    out.set(key, group);
+  }
+  return out;
 }
 
 /** Height of a node (start or end of one of its edges). */
@@ -182,7 +221,8 @@ function nodeHeight(g: RouteGraph, n: number): number {
 }
 
 /** Disc (or ring from r0 to r1) at height y, as triangles. */
-function disc(cx: number, cz: number, y: number, r0: number, r1: number, c: THREE.Color, pos: number[], col: number[]): void {
+function disc(cx: number, cz: number, y: number, r0: number, r1: number, c: THREE.Color, sink: Sink): void {
+  const { pos, col } = sink(cx, cz);
   const n = ROUNDABOUT.segments;
   for (let k = 0; k < n; k++) {
     const a0 = (k / n) * Math.PI * 2;
@@ -200,7 +240,7 @@ function disc(cx: number, cz: number, y: number, r0: number, r1: number, c: THRE
  * Roundabouts are one node in the graph (one decision); drawn as an asphalt ring around a
  * grass island that hides where the approaches meet, with white edge lines.
  */
-function roundabouts(g: RouteGraph, radius: Map<number, number>, pos: number[], col: number[], mpos: number[], mcol: number[]): void {
+function roundabouts(g: RouteGraph, radius: Map<number, number>, road: Sink, mark: Sink): void {
   const asphalt = new THREE.Color(ROAD_COLOR[8] ?? ROAD_COLOR_DEFAULT);
   const island = new THREE.Color(ROUNDABOUT.island);
   const white = new THREE.Color(MARKING.white);
@@ -210,8 +250,8 @@ function roundabouts(g: RouteGraph, radius: Map<number, number>, pos: number[], 
     const y = nodeHeight(g, n) + RENDER.roadLift;
     const ri = Math.max(ROUNDABOUT.minIsland, r - ROUNDABOUT.lane / 2);
     const ro = ri + ROUNDABOUT.lane;
-    disc(x, z, y + ROUNDABOUT.lift, ri, ro, asphalt, pos, col);
-    disc(x, z, y + ROUNDABOUT.islandLift, 0, ri, island, pos, col);
-    disc(x, z, y + ROUNDABOUT.lift + MARKING.lift, ri + 0.3, ri + 0.3 + MARKING.width, white, mpos, mcol);
+    disc(x, z, y + ROUNDABOUT.lift, ri, ro, asphalt, road);
+    disc(x, z, y + ROUNDABOUT.islandLift, 0, ri, island, road);
+    disc(x, z, y + ROUNDABOUT.lift + MARKING.lift, ri + 0.3, ri + 0.3 + MARKING.width, white, mark);
   }
 }

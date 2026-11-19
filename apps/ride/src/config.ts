@@ -9,10 +9,10 @@ export const RENDER = {
   /** Vertex snapping grid as a fraction of the internal resolution (0.5 = half resolution, subtle); 0 = off. */
   vertexSnap: 0.5,
   fovDeg: 60,
-  /** Near pass (L0 world). */
+  /** Near pass (levels L0, L1: up to ~11 km). */
   near: 0.3,
-  far: 9000,
-  /** Far pass (panorama levels), drawn first with its own depth buffer. */
+  far: 16000,
+  /** Far pass (levels L2–L4), drawn first with its own depth buffer. */
   farPassNear: 300,
   farPassFar: 130000,
   /** Haze shared by both passes (distance in m where it starts / is complete). */
@@ -153,4 +153,27 @@ export const TREES = {
     broadleaf: [0x3d6b2c, 0x52803a],
     orchard: [0x5a8a3a, 0x6e9a44],
   },
+};
+
+/**
+ * Tile streaming (PLAN.md, Höhenpyramide): per level the 3 × 3 tiles around the camera's
+ * tile are wanted (`want`: max distance of the tile centre in tile sizes, Chebyshev), kept
+ * until `keep` (hysteresis), L4 always. Coarse tiles are split into chunks matching the next
+ * finer level, hidden where that level is loaded.
+ */
+export const STREAM = {
+  want: 1.5,
+  keep: 1.9,
+  /** Chunks per tile side: L1–L3 have 2 × 2 children, L4 has 4 × 4 L3 tiles. */
+  chunks: [1, 2, 2, 2, 4] as readonly number[],
+  /** Skirt depth per level (m): covers cracks to coarser neighbours (Copernicus vs swissALTI3D). */
+  skirt: [12, 40, 80, 150, 300] as readonly number[],
+  /** Every step-th node per level: L2/L3 lie beyond 4–8 km, half resolution is plenty there (GPU memory). */
+  step: [1, 1, 2, 2, 1] as readonly number[],
+  /** Levels drawn in the near pass; the others go to the far pass. */
+  nearLevels: 2,
+  /** Tiles decoded at the same time. */
+  parallel: 3,
+  /** How often the wanted set is recomputed (ms). */
+  intervalMs: 250,
 };

@@ -1,15 +1,18 @@
 import '@fontsource/press-start-2p';
 import * as THREE from 'three/webgpu';
 import { FixedStepClock, GradeController, Recorder, Ride, airDensity, crrForSurface, DEFAULT_RIDER } from 'sim-core';
-import { RENDER, SIM, TRAINER } from './config';
+import { RENDER, SIM, STREAM, TRAINER } from './config';
 import { AutopilotSource, TrainerSource, type PowerSource } from './devices/power-source';
 import { ChaseCamera, FlyCamera } from './render/cameras';
 import { RetroRenderer } from './render/retro';
 import { RiderModel } from './render/rider';
 import { Trees } from './render/trees';
-import { addRoads, addTile, createScenes } from './render/scene';
+import { buildRoads, createScenes, disposeGroup, tileView, type TileView } from './render/scene';
 import { Hud } from './ui/hud';
+import { TileMap } from './ui/tilemap';
+import { chunkChild } from './world/select';
 import { World } from './world/world';
+import type { TileMesh } from './workers/world-worker';
 
 type Mode = 'trainer' | 'simulator' | 'autopilot' | 'fly';
 
@@ -24,6 +27,9 @@ const chase = new ChaseCamera(camera);
 let world: World;
 let fly: FlyCamera;
 let trees: Trees;
+let roads = new Map<string, THREE.Group>();
+const views = new Map<string, { view: TileView; level: number; ix: number; iy: number; chunks: number }>();
+const tileMap = new TileMap();
 
 interface Session {
   mode: Mode;
@@ -47,16 +53,22 @@ async function boot(): Promise<void> {
   await retro.init(scene, farScene, camera);
   resize();
   addEventListener('resize', resize);
-  world = await World.load(`${import.meta.env.BASE_URL}world/`, (t, done, total) => {
-    addTile(t.level === 0 ? scene : farScene, t);
-    $('loading').textContent = `LADE WELT … ${done}/${total} KACHELN`;
-  });
-  addRoads(scene, world.graph);
-  trees = new Trees(world.tiles, world.graph, (x, z) => world.terrainHeight(x, z));
+  world = await World.load(`${import.meta.env.BASE_URL}world/`, { ready: onTileReady, dropped: onTileDropped });
+  trees = new Trees();
   scene.add(trees.group);
+  roads = buildRoads(world.graph, world.manifest.origin, world.manifest.levelInfo['0']?.size ?? 2000);
   scene.add(riderModel.group);
+  // first the tiles around the spawn, then the menu
+  const sp = world.toWorld(...world.manifest.spawn);
+  world.update(sp.x, sp.z);
+  while (!world.settled || arrivals.length) {
+    addArrivals(50);
+    const s = world.states();
+    $('loading').textContent = `LADE WELT … ${s.filter((t) => t.state === 'ready').length}/${s.length} KACHELN`;
+    await new Promise((r) => setTimeout(r, 100));
+  }
   fly = new FlyCamera(camera, canvas, (x, z) => world.terrainHeight(x, z));
-  $('loading').textContent = `${world.graph.edgeCount} STRASSENABSCHNITTE · ${(totalLength() / 1000).toFixed(0)} KM · ${trees.count} BÄUME · ${retro.backendName}`;
+  $('loading').textContent = `${world.graph.edgeCount} STRASSENABSCHNITTE · ${(totalLength() / 1000).toFixed(0)} KM · ${trees.count} BÄUME (NAH) · ${retro.backendName}`;
   $('attribution').textContent = world.manifest.attribution.join(' · ');
   for (const id of ['btn-trainer', 'btn-sim', 'btn-auto', 'btn-fly']) ($(id) as HTMLButtonElement).disabled = false;
   $('btn-trainer').onclick = () => start('trainer');
@@ -70,7 +82,61 @@ async function boot(): Promise<void> {
   chase.update(ride, 1);
   riderModel.update(ride.pointAhead(0).x, ride.height, ride.pointAhead(0).z, 1, 0, 0, 0);
   requestAnimationFrame(frame);
-  if (import.meta.env.DEV) (window as unknown as { __ride: unknown }).__ride = { world, scene, camera, get session() { return session; }, retro, trees, get fly() { return fly; } };
+  if (import.meta.env.DEV) (window as unknown as { __ride: unknown }).__ride = { world, scene, camera, get session() { return session; }, retro, get trees() { return trees; }, views, get fly() { return fly; } };
+}
+
+// --- tile streaming --------------------------------------------------------------------
+
+/** Arrived tiles wait here and enter the scene a few per frame (no stall when several arrive at once). */
+const arrivals: [TileMesh, string][] = [];
+
+function onTileReady(t: TileMesh, key: string): void {
+  arrivals.push([t, key]);
+}
+
+function addArrivals(budgetMs: number): void {
+  const t0 = performance.now();
+  let changed = false;
+  while (arrivals.length && performance.now() - t0 < budgetMs) {
+    const [t, key] = arrivals.shift()!;
+    addTileView(t, key);
+    changed = true;
+  }
+  if (changed) refreshChunks();
+}
+
+function addTileView(t: TileMesh, key: string): void {
+  const view = tileView(t);
+  views.set(key, { view, level: t.level, ix: t.ix, iy: t.iy, chunks: t.chunks });
+  (t.level < STREAM.nearLevels ? scene : farScene).add(view.group);
+  if (t.level === 0) {
+    trees.add(t, key);
+    const r = roads.get(key);
+    if (r) scene.add(r);
+  }
+}
+
+function onTileDropped(t: TileMesh, key: string): void {
+  const i = arrivals.findIndex(([, k]) => k === key);
+  if (i >= 0) arrivals.splice(i, 1);
+  const v = views.get(key);
+  if (v) disposeGroup(v.view.group);
+  views.delete(key);
+  if (t.level === 0) {
+    trees.remove(key);
+    roads.get(key)?.removeFromParent();
+  }
+  refreshChunks();
+}
+
+/** A coarse chunk is hidden where the finer tile covering it is loaded (no overlapping levels). */
+function refreshChunks(): void {
+  for (const v of views.values()) {
+    if (v.level === 0) continue;
+    v.view.chunks.forEach((m, k) => {
+      m.visible = !views.has(chunkChild(v.level, v.ix, v.iy, k % v.chunks, Math.floor(k / v.chunks), v.chunks));
+    });
+  }
 }
 
 function totalLength(): number {
@@ -167,6 +233,7 @@ function onKey(e: KeyboardEvent): void {
   if (e.code === 'KeyV') retro.toggleSnap();
   if (e.code === 'KeyB') retro.toggleDither();
   if (e.code === 'KeyH') hud.toggle();
+  if (e.code === 'KeyK') tileMap.toggle();
   if (s.mode === 'fly') return;
   if (e.code === 'KeyF') {
     s.flying = !s.flying;
@@ -216,6 +283,7 @@ function tick(now: number): void {
 }
 
 let lastFrame = performance.now();
+let lastStream = 0;
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
@@ -251,6 +319,14 @@ function frame(now: number): void {
   const sky = farScene.getObjectByName('sky');
   sky?.position.copy(camera.position);
   trees?.update(camera.position);
+  if (world && now - lastStream > STREAM.intervalMs) {
+    lastStream = now;
+    world.update(camera.position.x, camera.position.z);
+  }
+  if (world) {
+    addArrivals(6);
+    tileMap.draw(world, now);
+  }
   retro.render();
   requestAnimationFrame(frame);
 }
