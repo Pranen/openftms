@@ -91,7 +91,7 @@ describe.skipIf(!graphJson)('pipeline graph (apps/ride/public/world)', () => {
       // heights plausible for the Rheintal
       const h = g.height(e, g.length(e) / 2);
       expect(h).toBeGreaterThan(380);
-      expect(h).toBeLessThan(1000);
+      expect(h).toBeLessThan(1600) // up to Gafadura (1420 m);
     }
     // every node is reachable via its exits
     for (let n = 0; n < g.nodeCount; n++) expect(g.exits(n).length).toBeGreaterThan(0);

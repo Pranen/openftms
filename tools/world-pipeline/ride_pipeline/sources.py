@@ -71,6 +71,8 @@ def osm_clip(src: Path, key: str, e_min: float, n_min: float, e_max: float, n_ma
     reference, as a small file. Rebuilt when the source is newer."""
     import osmium
 
+    # the box is part of the file name: a changed box must not reuse an old clip
+    key = f"{key}-{int(e_min)}-{int(n_min)}-{int(e_max)}-{int(n_max)}-{int(margin_m)}"
     dest = CACHE / "osm" / f"{key}.osm.pbf"
     if dest.exists() and dest.stat().st_mtime > src.stat().st_mtime:
         return dest

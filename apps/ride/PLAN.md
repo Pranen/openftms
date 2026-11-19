@@ -1,7 +1,7 @@
 # Ride (Arbeitstitel) – Indoor-Cycling-PWA im Rheintal
 
 **Status: M0 und M1 umgesetzt (18.11.2026): Vertical Slice Eschen/Schellenberg fahrbar mit Trainer, Simulator,
-Demo-Autopilot und Freiflug.** Nach jedem abgeschlossenen Meilenstein die Status-Spalte unten aktualisieren.
+Demo-Autopilot und Freiflug. Streaming L0–L4 aus M3 vorgezogen (19.11.2026), Ausschnitt bis Planken/Gafadura.** Nach jedem abgeschlossenen Meilenstein die Status-Spalte unten aktualisieren.
 
 Webbasierte Indoor-Cycling-App wie Zwift, aber lokal, unabhängig und im PS1-Retro-Look. Statt einer Fantasiewelt
 die echte Region Feldkirch – Landquart – Walenstadt – Oberriet (ca. 40 × 40 km). Aufrufen, Smart Trainer verbinden,
@@ -349,7 +349,7 @@ Höhenwechseln, `crr` beim Belagswechsel, `windSpeedMps = 0`.
 | M0 | Gerüst | `apps/ride` (Vite, PWA, Three.js WebGPU), `packages/sim-core`, `packages/route-graph`, `tools/world-pipeline`; Deploy-Workflow noch offen (braucht Eintrag in pwa-infrastructure) | erledigt bis auf Deploy |
 | M1 | Vertical Slice | **2 × 2 L0-Kacheln Eschen/Schellenberg** (siehe unten): Graph-Ausschnitt, Gelände 8 m mit Einschnitt, freies Fahren, Trainer-Steigung, Retro-Pass, HUD, Demo-Modus | erledigt (mit echtem Flux 2 noch nicht gefahren) |
 | M2 | Graph der Region | ganzes Fahrnetz inkl. Vorarlberg, Prüfungen (Querprofile, Steigungs-Histogramm), Navigator an Kreuzungen | offen |
-| M3 | Welt-Streaming | Pyramide L0–L4, Ringwahl, Worker, Service Worker, Gebäude, Kulisse, Gewässer, Bäume | offen |
+| M3 | Welt-Streaming | Pyramide L0–L4, Ringwahl, Worker, Service Worker, Gebäude, Kulisse, Gewässer, Bäume | Streaming vorgezogen und mit erweitertem Ausschnitt getestet (19.11.2026, siehe unten); Kulisse, Gewässer, swissALTI3D für L1–L3 offen |
 | M4 | Routen | GPX-Import mit Map-Matching, Routenwahl, Routen speichern | offen |
 | M5 | Brille | ActiveLook-HUD mit Navigation und Gesten | offen |
 | M6 | Export | FIT/TCX, Strava | offen |
@@ -427,3 +427,47 @@ Der Ausschnitt deckt damit Flachstück **und** Anstieg ab und testet nebenbei Ka
   dafür befahrbar. Die zwei Einbahn-Hälften an Inseln (≤ 250 m, Enden ≤ 30 m auseinander, gleicher Name und Klasse)
   werden zu einer Zweirichtungsstrasse auf der Mittellinie zusammengelegt. M1: 1'499 Kanten, 153 km (8 km
   Begleitwege weniger); Kreisel haben jetzt saubere vier Arme.
+
+### M3 vorgezogen: Streaming-Test mit erweitertem Ausschnitt (19.11.2026)
+
+Ziel: das ganze L0–L4-Streaming testen, ohne schon die ganze Region (M2) zu bauen. Karte: `docs/ausbau-m3.svg`.
+
+| Stufe | Gebiet (LV95) | Kacheln | Quelle |
+|---|---|---|---|
+| L0 (2 km, 8 m) | E 2'756'000–2'762'000, N 1'226'000–1'234'000 (6 × 8 km) | 12 | swissALTI3D, Österreich-Rand (1.2 %) aus Copernicus; Graph, Gebäude, Bäume |
+| L1 (4 km, 16 m) | E 2'752'000–2'768'000, N 1'220'000–1'236'000 | 16 | Copernicus, Bodenbedeckung aus OSM (LI/CH), weit weg von OSM-Flächen geschätzt |
+| L2 (8 km, 32 m) | E 2'744'000–2'776'000, N 1'216'000–1'248'000 | 16 | Copernicus, Bodenbedeckung aus Höhe/Neigung |
+| L3 (16 km, 64 m) | E 2'720'000–2'784'000, N 1'200'000–1'264'000 | 16 | dto. |
+| L4 (64 km, 250 m) | wie bisher | 4 | dto. |
+
+- **Ausschnitt:** Eschen, Mauren, Schellenberg, Nendeln, Schaanwald, Paulahütte (1'008 m), Planken, Gafadura
+  (1'420 m), Fuss der Drei Schwestern. Anstiege Schaan → Planken → Gafadura (Planknerstrasse ca. 10 %,
+  Gafadurastrasse bis 16 %) und Nendeln → Paulahütte. Graph 2'173 Knoten, 2'566 Kanten, 323 km.
+- **Weltdaten:** 14 MB (L0 2.7, L1–L3 je 3.1, L4 0.8, Graph 0.4); Pipeline-Lauf 35 s (erster Lauf mit
+  Schweiz-Zuschnitt für L1 ca. 8 min), byteidentisch wiederholbar. OSM-Zuschnitte tragen den Ausschnitt im
+  Dateinamen (alter Zuschnitt wurde sonst wiederverwendet).
+- **Pipeline:** `panorama.py` baut alle groben Stufen (`build_level`); L1–L3 Mittel über die Zelle, L4 wie bisher
+  Max/Mittel. Copernicus ist ein Oberflächenmodell: Wald in L1–L3 um 12 m abgesenkt, sonst stünden Wälder als
+  Plateaus neben den L0-Kacheln. Höhen der groben Stufen in 0.1-m-Schritten. Die Absenkung des Panoramas unter
+  dem Detailausschnitt entfällt (der Client blendet aus).
+- **Steile Wege:** Mit Planken/Gafadura kamen Bergwege dazu (bis 104 % über 20 m). Wege mit `sac_scale` über
+  `hiking` oder `mtb:scale` ≥ 2 fallen weg, Wege/Feldwege über 40 % ebenfalls; Profile werden nachgeglättet, bis
+  Strassen ≤ 18 %, Wege ≤ 28 % (über 20 m) haben, und vorher mit einem Median von DEM-Stufen (Durchlässe) befreit.
+  Steilstes Stück jetzt 28.7 %.
+- **Client-Streaming** (`world/world.ts`, `world/select.ts`): pro Stufe die 3 × 3 Kacheln um die Kamera
+  (Chebyshev-Abstand der Kachelmitte < 1.5 Kachelgrössen), behalten bis 1.9 (Hysterese), L4 immer; nächste
+  zuerst, bei Gleichstand die gröbere; 3 gleichzeitig, ein Worker. Ankommende Kacheln kommen höchstens 6 ms pro
+  Frame in die Szene.
+- **Ausblenden statt Absenken:** Grobe Kacheln sind in Viertel geteilt (L4: 4 × 4), passend zur nächstfeineren
+  Stufe; ein Viertel ist unsichtbar, sobald die feinere Kachel in der Szene ist. Schürzen an allen Viertelrändern
+  (L0 12 m … L4 300 m) verdecken die Fugen. L0/L1 im Nah-Durchgang (Fernebene jetzt 16 km), L2–L4 im Fern-Durchgang.
+- **Pro Kachel:** Strassen (nach L0-Kachel gebündelt), Gebäude und Bäume kommen und gehen mit ihrer Kachel. Bäume
+  pflanzt jetzt der Worker (er bekommt den Graphen einmal), sonst stockte das Bild bis 1 s.
+- **Speicher:** L2/L3 mit jedem zweiten Knoten (jenseits 4–8 km reicht das), Geländefarben als RGBA-Bytes.
+- **Debug:** Taste `K` zeigt eine Karte der Kacheln pro Stufe (gefüllt = geladen, gestrichelt = lädt) und die
+  geladenen MB.
+- **Geprüft:** Start in 1.6–2.8 s (37 Kacheln), Freiflug Schellenberg ↔ Gafadura hin und zurück ohne Fehler und
+  ohne Ruckler über 80 ms ausser einmal ca. 1 s beim ersten Mal (vermutlich Shader-Kompilierung); Autopilot auf
+  Plankner- und Gafadurastrasse. Tests für die Kachelwahl (`apps/ride/test/select.test.ts`).
+- **Offen:** swissALTI3D statt Copernicus für L1 (Downloads ca. 1 GB), Österreich (BEV, OSM), Gebäude als Quader
+  in L1, Streaming des Graphen (heute eine Datei für den Ausschnitt), Messung auf schwächerer Hardware.

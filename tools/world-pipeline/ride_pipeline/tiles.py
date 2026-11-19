@@ -111,7 +111,9 @@ def terrain_heights(dem: Dem, smooth: np.ndarray, te: float, tn: float, roads) -
     return h
 
 
-def landcover(areas: list[Area], te: float, tn: float) -> np.ndarray:
+def landcover(areas: list[Area], te: float, tn: float, size: float = TILE, fill: int = MEADOW) -> np.ndarray:
+    """Land cover code per node of a tile of the given size; `fill` where no polygon lies."""
+    cell = size / (N - 1)
     shapes = []
     for a in areas:
         code = landcover_code(a.tags)
@@ -120,11 +122,11 @@ def landcover(areas: list[Area], te: float, tn: float) -> np.ndarray:
         for outer, inners in a.rings:
             shapes.append((PRIORITY.index(code), _geojson(outer, inners), code))
     shapes.sort(key=lambda s: s[0])
-    transform = Affine(CELL, 0, te - CELL / 2, 0, -CELL, tn + TILE + CELL / 2)
+    transform = Affine(cell, 0, te - cell / 2, 0, -cell, tn + size + cell / 2)
     if not shapes:
-        return np.zeros((N, N), np.uint8)
+        return np.full((N, N), fill, np.uint8)
     return features.rasterize([(g, c) for _, g, c in shapes], out_shape=(N, N), transform=transform,
-                              fill=MEADOW, dtype="uint8")
+                              fill=fill, dtype="uint8")
 
 
 # --- buildings -----------------------------------------------------------------------
