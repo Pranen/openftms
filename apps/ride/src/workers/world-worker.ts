@@ -200,6 +200,30 @@ function buildings(list: Building[], x0: number, z0: number) {
 
 let graph: RouteGraph | null = null;
 
+/**
+ * Whether a building stands on a road band (OSM footprints and road centre lines do not always
+ * agree, and the pipeline moves roads slightly): probed on a 2 m grid over its box and at its corners.
+ */
+function onRoad(b: Building, x0: number, z0: number, g: RouteGraph): boolean {
+  const ux = Math.cos(b.angle);
+  const uz = Math.sin(b.angle);
+  const hit = (x: number, z: number) => {
+    const r = g.nearest(x, z, 12);
+    return r !== null && r.dist < g.halfWidth(r.edge) - BUILDING.roadTolerance;
+  };
+  const nl = Math.max(1, Math.ceil(b.halfLength));
+  const nw = Math.max(1, Math.ceil(b.halfWidth));
+  for (let i = -nl; i <= nl; i++) {
+    for (let j = -nw; j <= nw; j++) {
+      const u = (i / nl) * b.halfLength;
+      const v = (j / nw) * b.halfWidth;
+      if (hit(x0 + b.cx + ux * u - uz * v, z0 + b.cz + uz * u + ux * v)) return true;
+    }
+  }
+  for (let k = 0; k < b.ring.length; k += 2) if (hit(x0 + b.ring[k]!, z0 + b.ring[k + 1]!)) return true;
+  return false;
+}
+
 self.onmessage = (ev: MessageEvent<TileRequest | GraphMessage>) => {
   if ('graph' in ev.data) {
     graph = new RouteGraph(ev.data.graph.meta, ev.data.graph.bin);
@@ -211,6 +235,10 @@ self.onmessage = (ev: MessageEvent<TileRequest | GraphMessage>) => {
   const x0 = t.header.originE - e0;
   const z0 = n0 - (t.header.originN + cell * (n - 1));
   const level = t.header.level;
+  if (graph) {
+    const g = graph;
+    t.buildings = t.buildings.filter((b) => !onRoad(b, x0, z0, g));
+  }
   const chunks = STREAM.chunks[level] ?? 1;
   const mesh: TileMesh = {
     id,
