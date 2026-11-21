@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { RouteGraph, encodeGraph, SURFACE } from 'route-graph';
 import {
+  DEFAULT_LINE,
+  rightOffset,
   DEFAULT_RIDER,
   FixedStepClock,
   GradeController,
@@ -124,9 +126,9 @@ describe('Ride', () => {
 
   it('follows the chosen turn and travels edges backwards', () => {
     const g = crossing();
-    const r = new Ride(g, { edge: 0, dir: 1, s: 190 });
+    const r = new Ride(g, { edge: 0, dir: 1, s: 170 });
     expect(r.choose('right')).toBe(true);
-    for (let i = 0; i < 400; i++) r.step(0.05, 250);
+    for (let i = 0; i < 500; i++) r.step(0.05, 250);
     expect(r.pos.edge).toBe(3);
     expect(r.pos.dir).toBe(-1); // edge 3 runs 4 -> 1, we ride 1 -> 4
     expect(r.distance).toBeGreaterThan(10);
@@ -162,6 +164,65 @@ describe('Ride', () => {
     // the corner (radius ~ a few metres) is taken at walking-to-jogging pace, not at 50 km/h
     expect(Math.min(...caps)).toBeLessThan(8);
     expect(r.pos.edge).toBe(2);
+  });
+});
+
+describe('DrivenLine', () => {
+  it('keeps right on a two-way road and rounds a right-angle corner', () => {
+    const g = crossing(); // residential (half width 2.6 m): ridden 1.6 m right of the centre
+    const r = new Ride(g, { edge: 0, dir: 1, s: 100 });
+    const p = r.lineAt(0);
+    // heading east: right is south (+z)
+    expect(p.z).toBeCloseTo(rightOffset(g, 0, DEFAULT_LINE), 1);
+    expect(p.tx).toBeCloseTo(1, 3);
+    // a left turn at the crossing: the line bends gently (radius of several metres), no kink
+    const t = new Ride(g, { edge: 0, dir: 1, s: 150 });
+    t.choose('left');
+    let maxK = 0;
+    for (let d = 0; d < 100; d += 0.5) maxK = Math.max(maxK, Math.abs(t.lineAt(d).k));
+    expect(1 / maxK).toBeGreaterThan(4);
+    expect(1 / maxK).toBeLessThan(15);
+  });
+
+  it('rides round a roundabout anticlockwise on the ring, not through the island', () => {
+    // a roundabout node 1 at (200, 0) with radius 12; approach from the west, exit north (a left turn)
+    const { meta, buffer } = encodeGraph({
+      nodes: [
+        { x: 0, z: 0 },
+        { x: 200, z: 0 },
+        { x: 400, z: 0 },
+        { x: 200, z: -200 },
+        { x: 200, z: 200 },
+      ],
+      edges: [
+        { from: 0, to: 1, cls: 5 },
+        { from: 1, to: 2, cls: 5 },
+        { from: 1, to: 3, cls: 5 },
+        { from: 1, to: 4, cls: 5 },
+      ],
+    });
+    meta.roundabouts = [[1, 12]];
+    const g = new RouteGraph(meta, buffer);
+    const r = new Ride(g, { edge: 0, dir: 1, s: 120 });
+    expect(r.choose('left')).toBe(true);
+    const ring = 12 - 3.5 + 7 * 0.55;
+    const angles: number[] = [];
+    let minR = Infinity;
+    for (let i = 0; i < 20 * 60; i++) {
+      r.step(0.05, 200);
+      const p = r.lineAt(0);
+      const d = Math.hypot(p.x - 200, p.z);
+      minR = Math.min(minR, d);
+      if (d < ring + 1) angles.push(Math.atan2(p.z, p.x - 200));
+      if (r.pos.edge === 2 && r.pos.s > 60) break;
+    }
+    expect(r.pos.edge).toBe(2); // north: 1 -> 3
+    expect(minR).toBeGreaterThan(ring - 1);
+    // anticlockwise seen from above with z south: the angle atan2(z, x) decreases
+    expect(angles.length).toBeGreaterThan(10);
+    let turned = 0;
+    for (let k = 1; k < angles.length; k++) turned += Math.atan2(Math.sin(angles[k]! - angles[k - 1]!), Math.cos(angles[k]! - angles[k - 1]!));
+    expect(turned).toBeLessThan(-Math.PI); // a left turn goes three quarters round
   });
 });
 

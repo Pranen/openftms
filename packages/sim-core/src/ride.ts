@@ -1,4 +1,5 @@
 import type { EdgePos, Exit, RouteGraph } from 'route-graph';
+import { DEFAULT_LINE, DrivenLine, type Junction, type LineOptions, type LinePoint, type Piece } from './line.js';
 import { DEFAULT_RIDER, airDensity, crrForSurface, stepSpeed, type RiderParams } from './physics.js';
 
 export type Turn = 'left' | 'straight' | 'right' | 'back';
@@ -27,9 +28,13 @@ export interface RideOptions {
   respectOneway: boolean;
   /** Distance before a junction from which the choice is shown (m). */
   announceDistance: number;
+  /** Closer than this to a junction (m, plus the ring radius at roundabouts) the choice is fixed: the line already bends. */
+  lockDistance: number;
+  /** The ridden line (keep right, roundabouts, rounded corners). */
+  line: LineOptions;
 }
 
-const DEFAULT_OPTIONS: RideOptions = { rider: DEFAULT_RIDER, respectOneway: false, announceDistance: 150 };
+const DEFAULT_OPTIONS: RideOptions = { rider: DEFAULT_RIDER, respectOneway: false, announceDistance: 150, lockDistance: 20, line: DEFAULT_LINE };
 const PROBE = 15; // m along edges to measure turn directions
 
 /**
@@ -49,12 +54,39 @@ export class Ride {
   ascent = 0;
   /** Current speed limit from curves ahead (m/s). */
   vCap = Infinity;
+  /** Graph metres travelled (the ridden line can be longer, see {@link DrivenLine}). */
+  travel = 0;
   private next: Upcoming | null = null;
+  /** Edges left behind, oldest first (for the line behind the rider). */
+  private readonly trail: { edge: number; dir: 1 | -1 }[] = [];
+  private lineCache: DrivenLine | null = null;
+  private lineKey = '';
+  private readonly rings: Map<number, number>;
 
-  constructor(readonly graph: RouteGraph, start: EdgePos, options: Partial<RideOptions> = {}) {
-    this.options = { ...DEFAULT_OPTIONS, ...options };
+  constructor(readonly graph: RouteGraph, start: EdgePos, options: Partial<Omit<RideOptions, 'line'>> & { line?: Partial<LineOptions> } = {}) {
+    this.options = { ...DEFAULT_OPTIONS, ...options, line: { ...DEFAULT_LINE, ...options.line } };
     this.pos = { ...start };
+    this.rings = new Map(graph.meta.roundabouts ?? []);
     this.plan();
+  }
+
+  /** The ridden line around the rider (rebuilt per metre of travel or when the route ahead changes). */
+  get line(): DrivenLine {
+    const o = this.options.line;
+    const base = Math.floor(this.travel);
+    const key = `${base}|${this.pos.edge}|${this.pos.dir}|${this.next?.node}|${this.next?.selected}`;
+    if (!this.lineCache || key !== this.lineKey) {
+      const { pieces, junctions } = this.route(o.back + 2, o.ahead + 2);
+      this.lineCache = new DrivenLine(this.graph, pieces, junctions, base - o.back, o.back + o.ahead + 1, this.travel, o);
+      this.lineKey = key;
+    }
+    return this.lineCache;
+  }
+
+  /** Point on the ridden line d metres (of line) ahead of the rider (negative: behind). */
+  lineAt(d: number, out?: LinePoint): LinePoint {
+    const l = this.line;
+    return l.at(l.lengthAt(this.travel) + d, out);
   }
 
   /** Height of the road under the rider. */
@@ -64,7 +96,7 @@ export class Ride {
 
   /** Local true grade (fraction) over ±2.5 m in travel direction. */
   get grade(): number {
-    return (this.heightAt(this.walk(2.5)) - this.heightAt(this.walk(-2.5))) / 5;
+    return (this.heightAt(this.walk(2.5)) - this.heightAt(this.walk(-2.5))) / 5 / this.line.stretch(this.travel);
   }
 
   /** The next junction (always known; show it when `distance` < announceDistance). */
@@ -83,7 +115,7 @@ export class Ride {
     this.v = stepSpeed(this.v, { powerW, grade: this.grade, crr, rho: airDensity(h0) }, this.options.rider, dt, this.vCap);
     const d = this.v * dt;
     if (d > 0) {
-      this.advance(d);
+      this.advance(d / this.line.stretch(this.travel));
       this.distance += d;
       this.movingTime += dt;
       const dh = this.height - h0;
@@ -93,10 +125,17 @@ export class Ride {
 
   // --- junction choice --------------------------------------------------------------
 
-  /** Select the option going `turn` at the next junction. Returns false if there is none. */
+  /** Whether the next junction is too close to change the choice. */
+  get locked(): boolean {
+    const n = this.next;
+    if (!n) return true;
+    return this.remaining() < this.options.lockDistance + (this.rings.get(n.node) ?? 0);
+  }
+
+  /** Select the option going `turn` at the next junction. Returns false if there is none (or it is too close). */
   choose(turn: Turn): boolean {
     const n = this.next;
-    if (!n) return false;
+    if (!n || this.locked) return false;
     let best = -1;
     n.options.forEach((o, i) => {
       if (o.turn === turn && (best < 0 || Math.abs(o.angle) < Math.abs(n.options[best]!.angle))) best = i;
@@ -109,7 +148,7 @@ export class Ride {
   /** Step through the options (−1: further left, +1: further right). */
   cycle(delta: 1 | -1): void {
     const n = this.next;
-    if (!n || n.options.length < 2) return;
+    if (!n || n.options.length < 2 || this.locked) return;
     n.selected = Math.min(n.options.length - 1, Math.max(0, n.selected + delta));
   }
 
@@ -182,9 +221,13 @@ export class Ride {
       const rem = this.remaining();
       if (left < rem) {
         this.pos.s += this.pos.dir * left;
+        this.travel += left;
         return;
       }
       left -= rem;
+      this.travel += rem;
+      this.trail.push({ edge: this.pos.edge, dir: this.pos.dir });
+      if (this.trail.length > 32) this.trail.shift();
       this.pos = this.leave(this.pos, this.next);
       this.plan();
     }
@@ -231,6 +274,46 @@ export class Ride {
     return pos;
   }
 
+  /** The edges around the rider: `back` metres behind (as far as known) and `ahead` metres along the plan. */
+  private route(back: number, ahead: number): { pieces: Piece[]; junctions: Junction[] } {
+    const g = this.graph;
+    const pieces: Piece[] = [];
+    const junctions: Junction[] = [];
+    const L0 = g.length(this.pos.edge);
+    const behind = this.pos.dir > 0 ? this.pos.s : L0 - this.pos.s;
+    pieces.push({ edge: this.pos.edge, dir: this.pos.dir, s0: this.pos.dir > 0 ? 0 : L0, s1: this.pos.s, d0: -behind, d1: 0 });
+    let d = -behind;
+    let later: { edge: number; dir: 1 | -1 } = { edge: this.pos.edge, dir: this.pos.dir };
+    for (let i = this.trail.length - 1; i >= 0 && d > -back; i--) {
+      const t = this.trail[i]!;
+      const L = g.length(t.edge);
+      junctions.unshift({ d, node: g.endNode(t.edge, t.dir), uTurn: t.edge === later.edge && t.dir !== later.dir });
+      pieces.unshift({ edge: t.edge, dir: t.dir, s0: t.dir > 0 ? 0 : L, s1: t.dir > 0 ? L : 0, d0: d - L, d1: d });
+      d -= L;
+      later = t;
+    }
+    let pos: EdgePos = { ...this.pos };
+    d = 0;
+    let first = true;
+    for (let guard = 0; guard < 200 && d < ahead; guard++) {
+      const rem = this.remaining(pos);
+      const L = g.length(pos.edge);
+      pieces.push({ edge: pos.edge, dir: pos.dir, s0: pos.s, s1: pos.dir > 0 ? L : 0, d0: d, d1: d + rem });
+      d += rem;
+      let n: Upcoming | null;
+      if (first) n = this.next;
+      else {
+        const options = this.turnOptions(pos);
+        n = { node: g.endNode(pos.edge, pos.dir), distance: 0, options, selected: this.defaultChoice(pos, options) };
+      }
+      first = false;
+      const nextPos = this.leave(pos, n);
+      junctions.push({ d, node: g.endNode(pos.edge, pos.dir), uTurn: nextPos.edge === pos.edge });
+      pos = nextPos;
+    }
+    return { pieces, junctions };
+  }
+
   heightAt(p: EdgePos): number {
     return this.graph.height(p.edge, p.s);
   }
@@ -249,27 +332,20 @@ export class Ride {
     return { x: q.x, z: q.z, tx: q.tx * p.dir, tz: q.tz * p.dir, h: this.heightAt(p) };
   }
 
-  /** Highest speed from which the virtual rider can still slow down for every curve ahead. */
+  /** Highest speed from which the virtual rider can still slow down for every curve of the ridden line ahead. */
   private curveSpeedLimit(): number {
     const r = this.options.rider;
     const reach = Math.max(40, (this.v * this.v) / (2 * r.brakeDecel) + 20);
-    const step = 5;
-    let prev = this.pointAhead(0);
-    let cur = this.pointAhead(step);
+    const line = this.line;
+    const c0 = line.lengthAt(this.travel);
     let cap = Infinity;
-    for (let d = step; d < reach; d += step) {
-      const nxt = this.pointAhead(d + step);
-      const a1 = Math.atan2(cur.z - prev.z, cur.x - prev.x);
-      const a2 = Math.atan2(nxt.z - cur.z, nxt.x - cur.x);
-      let da = Math.abs(a2 - a1);
-      if (da > Math.PI) da = 2 * Math.PI - da;
-      if (da > 1e-3) {
-        const radius = step / da;
-        const vCurve = Math.sqrt(r.maxLateralAccel * radius);
-        cap = Math.min(cap, Math.sqrt(vCurve * vCurve + 2 * r.brakeDecel * d));
-      }
-      prev = cur;
-      cur = nxt;
+    for (let i = Math.max(0, Math.floor(this.travel - line.u0)); i < line.n; i++) {
+      const d = line.c[i]! - c0;
+      if (d > reach) break;
+      const k = Math.abs(line.k[i]!);
+      if (k < 1e-3) continue;
+      const vCurve = Math.sqrt(r.maxLateralAccel / k);
+      cap = Math.min(cap, Math.sqrt(vCurve * vCurve + 2 * r.brakeDecel * Math.max(0, d)));
     }
     return cap;
   }

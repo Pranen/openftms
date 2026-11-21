@@ -1,13 +1,13 @@
 import '@fontsource/press-start-2p';
 import * as THREE from 'three/webgpu';
 import { FixedStepClock, GradeController, Recorder, Ride, airDensity, crrForSurface, DEFAULT_RIDER } from 'sim-core';
-import { RENDER, SIM, STREAM, TRAINER } from './config';
+import { RENDER, RIDER, ROUNDABOUT, SIM, STREAM, TRAINER } from './config';
 import { AutopilotSource, TrainerSource, type PowerSource } from './devices/power-source';
 import { ChaseCamera, FlyCamera } from './render/cameras';
 import { RetroRenderer } from './render/retro';
 import { RiderModel } from './render/rider';
 import { Trees } from './render/trees';
-import { buildRoads, createScenes, disposeGroup, tileView, type TileView } from './render/scene';
+import { buildRoads, createScenes, disposeGroup, nodeHeight, roadHeight, roadLift, tileView, type TileView } from './render/scene';
 import { Hud } from './ui/hud';
 import { TileMap } from './ui/tilemap';
 import { chunkChild } from './world/select';
@@ -30,6 +30,10 @@ let trees: Trees;
 let roads = new Map<string, THREE.Group>();
 const views = new Map<string, { view: TileView; level: number; ix: number; iy: number; chunks: number }>();
 const tileMap = new TileMap();
+/** The ride behind the menu (rider standing at the spawn). */
+let attract: Ride | null = null;
+/** The ridden line uses the roundabout ring as drawn. */
+const LINE = { ringLane: ROUNDABOUT.lane, ringMinIsland: ROUNDABOUT.minIsland };
 
 interface Session {
   mode: Mode;
@@ -78,9 +82,9 @@ async function boot(): Promise<void> {
   addEventListener('keydown', onKey);
   // attract view behind the menu
   const spawn = spawnPos();
-  const ride = new Ride(world.graph, spawn);
-  chase.update(ride, 1);
-  riderModel.update(ride.pointAhead(0).x, ride.height, ride.pointAhead(0).z, 1, 0, 0, 0);
+  attract = new Ride(world.graph, spawn, { line: LINE });
+  chase.update(attract, 1);
+  updateRider(attract, 0, 0);
   requestAnimationFrame(frame);
   if (import.meta.env.DEV) (window as unknown as { __ride: unknown }).__ride = { world, scene, camera, get session() { return session; }, retro, get trees() { return trees; }, views, get fly() { return fly; } };
 }
@@ -176,7 +180,7 @@ async function start(mode: Mode): Promise<void> {
     return;
   }
   stop();
-  const ride = new Ride(world.graph, spawnPos(), { rider: DEFAULT_RIDER });
+  const ride = new Ride(world.graph, spawnPos(), { rider: DEFAULT_RIDER, line: LINE });
   session = {
     mode,
     source,
@@ -282,6 +286,28 @@ function tick(now: number): void {
   }
 }
 
+/** Pose the rider from the ridden line: position, heading, grade and the curvature for the lean. */
+function updateRider(r: Ride, cadence: number, dt: number): void {
+  const p = r.lineAt(0);
+  const grade = (r.lineAt(1.5).h - r.lineAt(-1.5).h) / 3;
+  const kAhead = r.lineAt(r.v * RIDER.leanLeadS).k;
+  riderModel.update({ x: p.x, y: surfaceY(r, p.x, p.z, p.h), z: p.z, tx: p.tx, tz: p.tz, grade, k: p.k, kAhead, v: r.v, cadence, dt });
+}
+
+/**
+ * Height of the drawn surface under the rider: the road band (lifted per class, as in buildRoads)
+ * or the roundabout ring, which lies above its approaches.
+ */
+function surfaceY(r: Ride, x: number, z: number, h: number): number {
+  const g = r.graph;
+  let y = Math.max(h, roadHeight(g, r.pos.edge, r.pos.s)) + roadLift(g.edgeClass(r.pos.edge));
+  for (const [n, radius] of g.meta.roundabouts ?? []) {
+    const ri = Math.max(ROUNDABOUT.minIsland, radius - ROUNDABOUT.lane / 2);
+    if (Math.hypot(x - g.nodeX(n), z - g.nodeZ(n)) < ri + ROUNDABOUT.lane + 0.5) y = Math.max(y, nodeHeight(g, n) + RENDER.roadLift + ROUNDABOUT.lift);
+  }
+  return y + RIDER.clearance;
+}
+
 let lastFrame = performance.now();
 let lastStream = 0;
 function frame(now: number): void {
@@ -291,10 +317,7 @@ function frame(now: number): void {
   if (s) {
     tick(now);
     const r = s.ride;
-    const p = r.pointAhead(0);
-    const a = r.pointAhead(2);
-    const cadence = s.source?.cadence() ?? 0;
-    riderModel.update(p.x, p.h, p.z, a.x - p.x, a.z - p.z, s.paused || r.v < 0.3 ? 0 : cadence, dt);
+    updateRider(r, s.paused ? 0 : (s.source?.cadence() ?? 0), s.paused ? 0 : dt);
     riderModel.group.visible = s.mode !== 'fly';
     if (s.flying) fly.update(dt);
     else chase.update(r, dt);
@@ -315,6 +338,9 @@ function frame(now: number): void {
         now,
       );
     }
+  } else if (attract) {
+    updateRider(attract, 0, dt);
+    riderModel.group.visible = true;
   }
   const sky = farScene.getObjectByName('sky');
   sky?.position.copy(camera.position);

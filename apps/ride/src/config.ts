@@ -27,6 +27,10 @@ export const RENDER = {
   treeDistance: 4000,
   /** Road band height above the carved terrain (m). */
   roadLift: 0.08,
+  /** Extra lift per road class (bigger roads on top) and the distance over which a road's height
+   * bends to the biggest road at a junction (m). */
+  roadClassLift: 0.015,
+  junctionBlend: 15,
 };
 
 export const CAMERA = {
@@ -38,6 +42,60 @@ export const CAMERA = {
   lookHeight: 1.1,
   /** How far behind the rider the camera sits on the path (it follows the road, not the rider's heading). */
   smoothing: 4,
+};
+
+/**
+ * The cyclist (render/rider.ts). Colours in one place so outfits can be swapped later.
+ * Motion: lean = atan(v²·κ/g) with κ the curvature a little ahead, smoothed; standing on steep
+ * slow climbs, on the drops when fast, tucked when coasting fast, a foot on the ground when stopped.
+ */
+export const RIDER = {
+  outfit: {
+    jersey: 0xd42a2a,
+    jerseySide: 0xf2f2f2,
+    shorts: 0x1a1a20,
+    skin: 0xe2b48c,
+    socks: 0xf4f4f4,
+    shoes: 0xf0f0f0,
+    gloves: 0x26262c,
+    helmet: 0xf4f4f4,
+    helmetStripe: 0xd42a2a,
+    glasses: 0x141418,
+  },
+  bike: {
+    frame: 0x1f4fb4,
+    frameAccent: 0xf2f2f2,
+    fork: 0x1f4fb4,
+    tyre: 0x141414,
+    rim: 0x303036,
+    decal: 0xf2f2f2,
+    metal: 0xb8bcc4,
+    bar: 0x202024,
+    saddle: 0x18181c,
+    bottle: 0x40a0e0,
+  },
+  /** Seconds to follow lean / steer / pose changes (time constants). */
+  leanTau: 0.18,
+  steerTau: 0.12,
+  poseTau: 0.6,
+  maxLean: 0.75,
+  /** Look-ahead for the lean (s of travel): riders lean into a curve before it starts. */
+  leanLeadS: 0.35,
+  /** Standing on climbs steeper than standGrade below standSpeed (m/s); sits again with hysteresis. */
+  standGrade: 0.075,
+  sitGrade: 0.055,
+  standSpeed: 4.5,
+  /** Bike rock when standing (rad, peak). */
+  rock: 0.13,
+  /** Hands on the drops from this speed (m/s), tuck when coasting faster than tuckSpeed. */
+  dropsSpeed: 11,
+  tuckSpeed: 13,
+  /** Below this speed (m/s) for stopDelay s: foot on the ground. */
+  stopSpeed: 0.3,
+  stopDelay: 0.6,
+  /** Depth bias of the rider (above roads 2 and markings 4) and clearance above the drawn surface (m). */
+  depthBias: 6,
+  clearance: 0.02,
 };
 
 export const SIM = {
@@ -99,9 +157,22 @@ export const MARKING = {
   laneGap: 1.5,
   laneWidth: 1.5,
   junctionGap: 8,
+  /** Beyond the minimum gap, markings also stop this far after leaving the band of a road of the
+   * same or a bigger class at the junction (checked up to maxJunctionGap). */
+  junctionMargin: 2,
+  maxJunctionGap: 60,
   /** One-way pieces shorter than this (split approaches at islands) get no markings. */
   minOnewayLength: 80,
   lift: 0.03,
+};
+
+/** Kerb radii filled with asphalt between neighbouring roads at junctions (m, rad). */
+export const JUNCTION = {
+  kerbRadius: 6,
+  pathKerbRadius: 2.5,
+  maxLeg: 15,
+  minAngle: 0.35,
+  maxAngle: 2.8,
 };
 
 /** Roundabout drawing (the graph has one node per roundabout, with its radius). */
@@ -123,6 +194,8 @@ export const BUILDING = {
   roofs: [0x8c3b2e, 0x6e2f27, 0x5a5550, 0x7a4a32, 0x8a4434, 0x4e4a48, 0x9a5a3a, 0x6a3a2c],
   flatRoof: 0x77736c,
   overhang: 0.35,
+  /** Buildings reaching further than this into a road band (m from its edge, inwards) are left out. */
+  roadTolerance: 0.3,
 };
 
 /**

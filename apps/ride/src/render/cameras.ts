@@ -14,14 +14,14 @@ export class ChaseCamera {
   constructor(readonly camera: THREE.PerspectiveCamera) {}
 
   update(ride: Ride, dt: number): void {
-    const here = ride.pointAhead(0);
-    const ahead = ride.pointAhead(10);
+    const here = ride.lineAt(0);
+    const ahead = ride.lineAt(10);
     let dx = ahead.x - here.x;
     let dz = ahead.z - here.z;
     const l = Math.hypot(dx, dz) || 1;
     dx /= l;
     dz /= l;
-    const target = ride.pointAhead(CAMERA.lookAhead);
+    const target = ride.lineAt(CAMERA.lookAhead);
     const desired = new THREE.Vector3(here.x - dx * CAMERA.behind, here.h + CAMERA.height, here.z - dz * CAMERA.behind);
     const lookAt = new THREE.Vector3(target.x, target.h + CAMERA.lookHeight, target.z);
     const k = this.initialised ? 1 - Math.exp(-dt * CAMERA.smoothing) : 1;
