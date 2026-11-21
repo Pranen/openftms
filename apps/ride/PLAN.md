@@ -471,3 +471,24 @@ Ziel: das ganze L0–L4-Streaming testen, ohne schon die ganze Region (M2) zu ba
   Plankner- und Gafadurastrasse. Tests für die Kachelwahl (`apps/ride/test/select.test.ts`).
 - **Offen:** swissALTI3D statt Copernicus für L1 (Downloads ca. 1 GB), Österreich (BEV, OSM), Gebäude als Quader
   in L1, Streaming des Graphen (heute eine Datei für den Ausschnitt), Messung auf schwächerer Hardware.
+
+### M2 + M3: Entscheide (21.11.2026)
+
+Umsetzung auf Branch `ride-m2-m3` in Etappen (je Commit, Browser-Prüfung), Weltdaten am Schluss in eigenem Commit;
+pushen, kein PR/Merge ohne Rückfrage.
+
+| Thema | Entscheid |
+|---|---|
+| Gebiet | ganze Region (Feldkirch – Landquart – Walenstadt – Oberriet), L0 aus swissALTI3D bzw. BEV in Österreich; L1/L2 im Gebiet aus denselben Daten, L3/L4 ausserhalb Copernicus |
+| Österreich | BEV-Laserscan (Code aus ski), OSM-Auszug Österreich; Gebäude dort aus OSM |
+| Gebäude CH | swissBUILDINGS3D **3.0** (GDB) – Höhen, Dachform |
+| Gebäude FL | swissBUILDINGS3D **2.0** (DXF, wie li-auto) – 3.0 enthält Liechtenstein nicht; Zuordnung nach Landesgrenze |
+| Gebäude L1 | Quader |
+| Fassaden | einfache Pixel-Texturen (aus `li-auto/src/render/textures.ts`) je Typ, Dächer mit Ziegel/Blech; ein Atlas, Nearest; affin mit Unterteilung grosser Wände, abschaltbar |
+| Kulisse | Autobahn/Trunk als Bänder mit Leitplanken (nicht befahrbar); Brückenkörper mit Pfeilern und Geländer |
+| Gewässer | Rhein als breites Band mit Pegel, Seen (Walensee), Kanäle/Bäche als Bänder |
+| Eisenbahn | statisch: Schotterbett, Schienen, Fahrleitungsmasten, Bahnübergänge, Bahnhöfe; fahrender Zug nur, wenn Zeit bleibt |
+| Stromleitungen | Hochspannungsmasten und Seile aus OSM |
+| Wahrzeichen | aus li-auto: Gutenberg, Kathedrale, Regierung, Kunstmuseum, Hilti Art, Rotes Haus, St. Laurentius, Kirche Triesenberg; jede OSM-Kirche als generische Kirche; neu: Schloss Vaduz, Schattenburg + Dom Feldkirch, Schloss Werdenberg, Schloss Sargans, Ruinen Schellenberg, Kirchhügel Bendern, Alte Rheinbrücke Vaduz–Sevelen |
+| Client | Strassen, Markierungen und Kreuzungsflächen baut der Worker pro L0-Kachel (nicht mehr alle beim Start) |
+| Pipeline | wiederaufnehmbar und parallel pro Kachel; Prüfungen (Querprofile, Steigungs-Histogramm) |
