@@ -7,7 +7,8 @@ import { ChaseCamera, FlyCamera } from './render/cameras';
 import { RetroRenderer } from './render/retro';
 import { RiderModel } from './render/rider';
 import { Trees } from './render/trees';
-import { buildRoads, createScenes, disposeGroup, nodeHeight, roadHeight, roadLift, tileView, type TileView } from './render/scene';
+import { Trains } from './render/trains';
+import { createScenes, disposeGroup, nodeHeight, roadHeight, roadLift, tileView, type TileView } from './render/scene';
 import { Hud } from './ui/hud';
 import { TileMap } from './ui/tilemap';
 import { chunkChild } from './world/select';
@@ -27,7 +28,7 @@ const chase = new ChaseCamera(camera);
 let world: World;
 let fly: FlyCamera;
 let trees: Trees;
-let roads = new Map<string, THREE.Group>();
+const trains = new Trains();
 const views = new Map<string, { view: TileView; level: number; ix: number; iy: number; chunks: number }>();
 const tileMap = new TileMap();
 /** The ride behind the menu (rider standing at the spawn). */
@@ -60,7 +61,7 @@ async function boot(): Promise<void> {
   world = await World.load(`${import.meta.env.BASE_URL}world/`, { ready: onTileReady, dropped: onTileDropped });
   trees = new Trees();
   scene.add(trees.group);
-  roads = buildRoads(world.graph, world.manifest.origin, world.manifest.levelInfo['0']?.size ?? 2000);
+  scene.add(trains.group);
   scene.add(riderModel.group);
   // first the tiles around the spawn, then the menu
   const sp = world.toWorld(...world.manifest.spawn);
@@ -115,8 +116,7 @@ function addTileView(t: TileMesh, key: string): void {
   (t.level < STREAM.nearLevels ? scene : farScene).add(view.group);
   if (t.level === 0) {
     trees.add(t, key);
-    const r = roads.get(key);
-    if (r) scene.add(r);
+    trains.add(key, t.rails);
   }
 }
 
@@ -128,7 +128,7 @@ function onTileDropped(t: TileMesh, key: string): void {
   views.delete(key);
   if (t.level === 0) {
     trees.remove(key);
-    roads.get(key)?.removeFromParent();
+    trains.remove(key);
   }
   refreshChunks();
 }
@@ -345,6 +345,7 @@ function frame(now: number): void {
   const sky = farScene.getObjectByName('sky');
   sky?.position.copy(camera.position);
   trees?.update(camera.position);
+  trains.update(dt, camera.position);
   if (world && now - lastStream > STREAM.intervalMs) {
     lastStream = now;
     world.update(camera.position.x, camera.position.z);

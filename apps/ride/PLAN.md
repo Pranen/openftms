@@ -200,10 +200,13 @@ public/world/tiles/L{lvl}/{ix}_{iy}.{hash8}.bin
  Tabelle  [{id, offset, length}]
  HGHT     257² × Uint16, Delta 2. Ordnung (wie ski .sk2)              alle Stufen
  CODE     257² × Uint8: Wald, Wiese, Reben, Siedlung, Fels, Wasser, Gletscher …
- LINE     Kulissennetz als Polylinie (Int16 dm lokal) + Höhe + Breitenklasse + Brücke/Tunnel   L0, L1
- WATR     Wasserflächen mit Pegel, Flüsse als Band                    L0–L2
- BLDG     Gebäude parametrisch (Grundriss Int16 dm, Trauf-/Firsthöhe, Dachform, Farbklasse)  L0; L1 Quader
- LMRK     Wahrzeichen {assetId, Position, Drehung} → glTF in /landmarks/                     L0, L1
+ LINE     Kulisse als Polylinien: Art (Autobahn, Bahn, Strom, Fluss/Bach/Kanal), Breite, Punkte
+          (Int16 dm lokal, Höhe, Flags Brücke/Tunnel je Segment); Segment gehört der Kachel seiner Mitte   L0
+ BLDG     Gebäude parametrisch (Grundriss Int16 dm, Trauf-/Firsthöhe, Dachform im unteren, Stil im oberen
+          Halbbyte: Wohnhaus, Mehrfamilienhaus, Bauernhof, Gewerbe, Kirche, klein, offen, Gewächshaus; Farbklasse) L0
+ BLDQ     Gebäude als Quader (Mitte, Drehung, Halbmasse, Sockel, Höhe, Farbe, Stil)          L1
+ LMRK     Wahrzeichen {Stil, Mitte, Drehung, Halbmasse aus dem OSM-Grundriss, Sockel}; Modelle im Code
+          (render/landmarks.ts), die Gebäude darunter fallen weg                              L0
 ```
 
 Nicht in den Kacheln: das Fahrnetz (kommt aus `graph.bin`) und alles, was die Physik braucht.

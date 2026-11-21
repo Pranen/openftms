@@ -175,6 +175,47 @@ export const JUNCTION = {
   maxAngle: 2.8,
 };
 
+/**
+ * Scenery from the LINE section (render/scenery.ts): motorways, railways, bridges, power lines, waterways.
+ * Lengths in m.
+ */
+export const SCENERY = {
+  colours: {
+    asphalt: 0x5e5e64,
+    white: 0xe8e8e0,
+    rail: 0xb8bcc4,
+    ballast: 0x8a8070,
+    steel: 0x4a4440,
+    mast: 0x8a9098,
+    concrete: 0xa8a49c,
+    pier: 0x96928a,
+    tower: 0x8c949c,
+    pole: 0x6a5238,
+    cable: 0x30343a,
+    water: 0x4a7aa8,
+  },
+  motorway: { lift: 0.1, edgeInset: 0.5, line: 0.2, railLow: 0.45, railHigh: 0.8 },
+  rail: { lift: 0.15, ballast: 3.4, gauge: 1.435, railWidth: 0.12, railHeight: 0.18, mastSpacing: 55, mastOffset: 3.2, mastHeight: 7.2, wireHeight: 6 },
+  bridge: { deck: 1.4, overhang: 0.6, parapet: 1.0, pierSpacing: 32, pier: 0.9 },
+  power: { height: 34, base: 3.5, top: 0.8, arms: [24, 30], armLength: 7, armThickness: 0.5, sag: 0.04, cable: 0.12 },
+  minorPower: { height: 11, base: 0.18, top: 0.12, arms: [10], armLength: 1.2, armThickness: 0.15, sag: 0.02, cable: 0.06 },
+  water: { lift: 0.12, maxBand: 25 },
+};
+
+/** A train now and then on the railway near the camera (render/trains.ts). Speed m/s, times s, lengths m. */
+export const TRAIN = {
+  cars: 4,
+  car: { length: 25, width: 2.9, height: 3.9 },
+  gap: 0.8,
+  speed: 28,
+  lift: 0.3,
+  firstDelay: 8,
+  pause: 45,
+  spawnRadius: 1500,
+  minPath: 600,
+  colours: { body: 0xd42a24, windows: 0x2a2e36, roof: 0x9a9ea6, under: 0x303030 },
+};
+
 /** Roundabout drawing (the graph has one node per roundabout, with its radius). */
 export const ROUNDABOUT = {
   lane: 7,
@@ -196,6 +237,8 @@ export const BUILDING = {
   overhang: 0.35,
   /** Buildings reaching further than this into a road band (m from its edge, inwards) are left out. */
   roadTolerance: 0.3,
+  /** Churches with a footprint above this (m²) get a tower (render/landmarks.ts). */
+  churchTowerArea: 140,
 };
 
 /**

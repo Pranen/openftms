@@ -359,18 +359,20 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
             break
 
     # 6a. paths and tracks steeper than anything ridable on a trainer (short shortcuts up a slope)
-    def too_steep(e: Edge) -> bool:
+    # (all paths sampled in one batch: the elevation model loads 2 km blocks lazily)
+    steep_s, steep_p, steep_e = [], [], []
+    for e in edges:
         if e.cls > 2:
-            return False
-        en = e.en
-        L = float(cumulative(en)[-1])
-        ss = np.arange(0, L + 1e-9, PROFILE_STEP)
+            continue
+        ss = np.arange(0, float(cumulative(e.en)[-1]) + 1e-9, PROFILE_STEP)
         if len(ss) < 2:
-            return False
-        p = sample_at(en, ss)
-        h = smooth_1d(dem.sample(p[:, 0], p[:, 1]), SMOOTH_WINDOW)
-        return _max_grade(ss, h) > GRADE_DROP_PATH
-    edges = [e for e in edges if not too_steep(e)]
+            continue
+        steep_e.append(id(e))
+        steep_s.append(ss)
+        steep_p.append(sample_at(e.en, ss))
+    steep = {k for k, ss, h in zip(steep_e, steep_s, dem.sample_many(steep_p))
+             if _max_grade(ss, smooth_1d(h, SMOOTH_WINDOW)) > GRADE_DROP_PATH}
+    edges = [e for e in edges if id(e) not in steep]
 
     # 6. largest connected component
     adj = defaultdict(set)
@@ -402,12 +404,17 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
     bclusters = boundary_clusters(boundary, uf)
 
     profiles, sections = [], []
-    for ei, e in enumerate(edges):
-        en = e.en
-        L = float(cumulative(en)[-1])
+    stations, points = [], []
+    for e in edges:
+        L = float(cumulative(e.en)[-1])
         s = np.r_[np.arange(0, L, PROFILE_STEP), L] if L % PROFILE_STEP > 1e-6 else np.arange(0, L + 1e-9, PROFILE_STEP)
-        pts = sample_at(en, s)
-        h = dem.sample(pts[:, 0], pts[:, 1])
+        stations.append(s)
+        points.append(sample_at(e.en, s))
+    raw_heights = dem.sample_many(points)
+    for ei, e in enumerate(edges):
+        s = stations[ei]
+        L = float(s[-1])
+        h = raw_heights[ei].copy()
         # structures: interpolate between the ends (plus a little margin onto the ground)
         acc = 0.0
         for pen, st in e.pieces:

@@ -14,6 +14,9 @@ from pathlib import Path
 
 from ride_pipeline import graph as G
 from ride_pipeline import panorama as P
+from ride_pipeline import sb3d
+from ride_pipeline import scenery as S
+from ride_pipeline import landmarks as LM
 from ride_pipeline import tiles as T
 from ride_pipeline.dem import Dem
 from ride_pipeline.geo import E0, N0
@@ -22,7 +25,7 @@ from ride_pipeline.sources import dem_tiles, osm_clip, osm_extract
 
 HERE = Path(__file__).resolve().parent
 ATTRIBUTION = [
-    "Höhen: © swisstopo (swissALTI3D, OGD)",
+    "Höhen: © swisstopo (swissALTI3D, OGD); Österreich: BEV – Bundesamt für Eich- und Vermessungswesen (ALS DTM, CC BY 4.0)",
     "Grobe Stufen, Panorama: Copernicus DEM © DLR e.V. 2010-2014 und © Airbus Defence and Space GmbH 2014-2018, bereitgestellt im Rahmen von COPERNICUS durch die EU und die ESA",
     "Strassen, Bodenbedeckung, Gebäude: © OpenStreetMap-Mitwirkende (ODbL)",
 ]
@@ -46,11 +49,18 @@ def main() -> None:
     l4 = P.tile_indices(region, P.SIZE)  # the panorama tiles span the widest area of all levels
     cop = P.Copernicus.for_box((min(i for i, _ in l4) * P.SIZE, min(j for _, j in l4) * P.SIZE,
                                 (max(i for i, _ in l4) + 1) * P.SIZE, (max(j for _, j in l4) + 1) * P.SIZE))
-    margin = 60
+    margin = 100
     dem = Dem(dem_tiles(e_min - margin, n_min - margin, e_max + margin, n_max + margin),
-              e_min - margin, n_min - margin, e_max + margin, n_max + margin, fill=cop.sample_lv95)
+              e_min - margin, n_min - margin, e_max + margin, n_max + margin, fill=cop.sample_lv95,
+              austria="austria" in cfg["osm"])
     osm = read(osm_paths)
-    print(f"  {len(osm.ways)} highway ways, {len(osm.areas)} areas, {len(osm.routes)} route ways")
+    print(f"  {len(osm.ways)} highway ways, {len(osm.areas)} areas, {len(osm.routes)} route ways ({time.time() - t0:.0f} s)")
+    areas = T.AreaIndex(osm.areas)
+    print("buildings (swissBUILDINGS3D + OSM)")
+    sb = sb3d.buildings((e_min, n_min, e_max, n_max)) if cfg.get("sb3d", True) else []
+    bsrc = T.BuildingSource(sb, osm.areas)
+    print("landmarks")
+    landmarks = LM.LandmarkIndex(LM.find(osm, dem, (e_min, n_min, e_max, n_max)))
 
     print("graph")
     g = G.build(osm, (e_min, n_min, e_max, n_max), dem)
@@ -58,19 +68,26 @@ def main() -> None:
     graph_files = G.write(g, out)
 
     print("tiles")
-    roads = T.road_samples(g, G.ROAD_HALF_WIDTH)
-    smooth = dem.smoothed(T.CELL)
+    print("scenery lines")
+    lines = S.collect(osm, (e_min, n_min, e_max, n_max), dem)
+    print("  " + S.summary(lines))
+    line_index = S.LineIndex(lines)
+    roads = T.road_samples(g, G.ROAD_HALF_WIDTH, S.carve_samples(lines))
     level0: dict[str, str] = {}
-    for iy in range(int(n_min // T.TILE), int(n_max // T.TILE)):
-        for ix in range(int(e_min // T.TILE), int(e_max // T.TILE)):
+    # column by column (west to east, south to north): neighbouring tiles share elevation blocks in the cache
+    for ix in range(int(e_min // T.TILE), int(e_max // T.TILE)):
+        for iy in range(int(n_min // T.TILE), int(n_max // T.TILE)):
             te, tn = ix * T.TILE, iy * T.TILE
-            h = T.terrain_heights(dem, smooth, te, tn, roads)
-            code = T.landcover(osm.areas, te, tn)
-            bldg = T.buildings(osm.areas, dem, te, tn)
+            h = T.terrain_heights(dem, te, tn, roads)
+            code = T.landcover(areas, te, tn)
+            bldg = bsrc.tile(dem, te, tn, skip=landmarks.covers)
+            lmrk = landmarks.tile(te, tn, T.TILE, T.H_SCALE, T.H_OFFSET)
+            line = line_index.tile(te, tn, T.TILE, T.H_SCALE, T.H_OFFSET)
             name = T.write_tile(out / "L0", ix, iy, [(b"HGHT", T.encode_heights(h)), (b"CODE", code.tobytes()),
-                                                      (b"BLDG", bldg)])
+                                                      (b"BLDG", bldg), (b"LINE", line), (b"LMRK", lmrk)])
             level0[f"{ix}_{iy}"] = name
-            print(f"  L0/{name}  h {h.min():.0f}-{h.max():.0f} m, {int.from_bytes(bldg[:4], 'little')} buildings")
+            print(f"  L0/{name}  h {h.min():.0f}-{h.max():.0f} m, {int.from_bytes(bldg[:4], 'little')} buildings"
+                  f"  ({time.time() - t0:.0f} s)")
     for old in (out / "L0").glob("*.bin"):
         if old.name not in level0.values():
             old.unlink()
@@ -79,11 +96,15 @@ def main() -> None:
     level_info = {"0": {"size": T.TILE, "cell": T.CELL}}
     for lvl in sorted(levels_cfg):
         box = levels_cfg[lvl]
-        print(f"level {lvl} (Copernicus{', OSM land cover' if lvl == 1 else ''})")
-        areas = None
+        print(f"level {lvl} (laser scan inside the box, Copernicus outside{', OSM land cover' if lvl == 1 else ''})")
+        lvl_areas = None
         if lvl == 1:  # land cover from OSM where mapped (the region extracts, clipped to the L1 box)
-            areas = read([osm_clip(osm_extract(r), f"{args.world}-L1-{r}", *box) for r in cfg["osm"]]).areas
-        levels[str(lvl)] = dict(sorted(P.build_level(lvl, box, cop, out, areas).items()))
+            lvl_areas = T.AreaIndex(read([osm_clip(osm_extract(r), f"{args.world}-L1-{r}", *box) for r in cfg["osm"]]).areas)
+        extra = None
+        if lvl == 1:  # buildings as boxes, so villages do not vanish beyond the L0 tiles
+            extra = lambda ix, iy: [(b"BLDQ", T.coarse_boxes(bsrc.boxes, ix, iy, P.SIZES[1], P.H_SCALE))]
+        levels[str(lvl)] = dict(sorted(P.build_level(lvl, box, cop, out, lvl_areas, dem, (e_min, n_min, e_max, n_max),
+                                                     extra).items()))
         level_info[str(lvl)] = {"size": P.SIZES[lvl], "cell": P.cell(lvl)}
     print("panorama L4 (Copernicus)")
     levels["4"] = dict(sorted(P.build_level(4, region, cop, out).items()))

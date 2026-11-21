@@ -265,6 +265,19 @@ export class RouteGraph {
     }
   }
 
+  /** Edges with a geometry segment in the box (world x/z; may include a few just outside), ascending. */
+  edgesIn(x0: number, z0: number, x1: number, z1: number): number[] {
+    const out = new Set<number>();
+    for (let i = Math.floor(x0 / GRID); i <= Math.floor(x1 / GRID); i++) {
+      for (let j = Math.floor(z0 / GRID); j <= Math.floor(z1 / GRID); j++) {
+        const list = this.cells.get(this.key(i, j));
+        if (!list) continue;
+        for (let k = 0; k < list.length; k += 2) out.add(list[k]!);
+      }
+    }
+    return [...out].sort((a, b) => a - b);
+  }
+
   /** Nearest point on the network within maxDist (null if none). */
   nearest(x: number, z: number, maxDist = 200): Nearest | null {
     const { geomX, geomZ, edgeGeomStart } = this.a;

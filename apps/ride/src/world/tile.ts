@@ -33,12 +33,43 @@ export interface Building {
   colour: number;
 }
 
+/** Scenery line kinds (LINE section, tools/world-pipeline scenery.py). */
+export const LINE_KIND = { motorway: 1, trunk: 2, rail: 10, power: 20, minorPower: 21, river: 30, stream: 31, canal: 32 } as const;
+/** Per-point flags of the segment to the next point. */
+export const LINE_BRIDGE = 1;
+export const LINE_TUNNEL = 2;
+
+/** A scenery line piece of a tile (motorway, railway, power line, waterway); points tile-local like buildings. */
+export interface SceneryLine {
+  kind: number;
+  width: number;
+  x: Float32Array;
+  z: Float32Array;
+  h: Float32Array;
+  f: Uint16Array;
+}
+
+/** A landmark (LMRK): model style, tile-local centre, angle in the x/z frame, half sizes, base height. */
+export interface LandmarkRecord {
+  style: number;
+  cx: number;
+  cz: number;
+  angle: number;
+  hl: number;
+  hw: number;
+  base: number;
+}
+
 export interface Tile {
   header: TileHeader;
   /** Node heights, row 0 = north edge, n × n. */
   heights: Float32Array;
   codes: Uint8Array;
   buildings: Building[];
+  lines: SceneryLine[];
+  landmarks: LandmarkRecord[];
+  /** Coarse levels: buildings as boxes (BLDQ): x, z (tile-local), angle (x/z frame), hl, hw, base, height, colour, style. */
+  boxes: Float32Array;
 }
 
 export function decodeTile(buf: ArrayBuffer): Tile {
@@ -85,7 +116,69 @@ export function decodeTile(buf: ArrayBuffer): Tile {
   const codes = cs ? new Uint8Array(buf.slice(cs[0], cs[0] + n * n)) : new Uint8Array(n * n);
   const bs = sections.get('BLDG');
   const buildings = bs ? decodeBuildings(dv, bs[0], header) : [];
-  return { header, heights, codes, buildings };
+  const ls = sections.get('LINE');
+  const lines = ls ? decodeLines(dv, ls[0], header) : [];
+  const ms = sections.get('LMRK');
+  const landmarks: LandmarkRecord[] = [];
+  if (ms) {
+    const count = dv.getUint32(ms[0], true);
+    for (let k = 0, o = ms[0] + 4; k < count; k++, o += 18) {
+      landmarks.push({
+        style: dv.getUint8(o),
+        cx: dv.getInt16(o + 2, true) / 10,
+        cz: dv.getInt16(o + 4, true) / 10,
+        angle: -(dv.getUint16(o + 6, true) / 65535) * Math.PI,
+        hl: dv.getUint16(o + 8, true) / 10,
+        hw: dv.getUint16(o + 10, true) / 10,
+        base: header.hOffset + dv.getUint16(o + 12, true) * header.hScale,
+      });
+    }
+  }
+  const qs = sections.get('BLDQ');
+  let boxes = new Float32Array(0);
+  if (qs) {
+    const count = dv.getUint32(qs[0], true);
+    boxes = new Float32Array(count * 9);
+    for (let k = 0, o = qs[0] + 4; k < count; k++, o += 16) {
+      boxes.set(
+        [
+          dv.getUint16(o, true) / 10,
+          dv.getUint16(o + 2, true) / 10,
+          -(dv.getUint16(o + 4, true) / 65535) * Math.PI,
+          dv.getUint16(o + 6, true) / 10,
+          dv.getUint16(o + 8, true) / 10,
+          dv.getUint16(o + 10, true) * header.hScale + header.hOffset,
+          dv.getUint16(o + 12, true) / 10,
+          dv.getUint8(o + 14),
+          dv.getUint8(o + 15),
+        ],
+        k * 9,
+      );
+    }
+  }
+  return { header, heights, codes, buildings, lines, landmarks, boxes };
+}
+
+function decodeLines(dv: DataView, offset: number, h: TileHeader): SceneryLine[] {
+  const count = dv.getUint32(offset, true);
+  const out: SceneryLine[] = [];
+  let o = offset + 4;
+  for (let k = 0; k < count; k++) {
+    const kind = dv.getUint8(o);
+    const width = dv.getUint16(o + 2, true) / 10;
+    const n = dv.getUint16(o + 4, true);
+    o += 8;
+    const line: SceneryLine = { kind, width, x: new Float32Array(n), z: new Float32Array(n), h: new Float32Array(n), f: new Uint16Array(n) };
+    for (let i = 0; i < n; i++) {
+      line.x[i] = dv.getInt16(o, true) / 10;
+      line.z[i] = dv.getInt16(o + 2, true) / 10;
+      line.h[i] = h.hOffset + dv.getUint16(o + 4, true) * h.hScale;
+      line.f[i] = dv.getUint16(o + 6, true);
+      o += 8;
+    }
+    out.push(line);
+  }
+  return out;
 }
 
 function decodeBuildings(dv: DataView, offset: number, h: TileHeader): Building[] {
