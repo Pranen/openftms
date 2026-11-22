@@ -6,9 +6,13 @@ Any rights in individual contents of the database are licensed under the Databas
 Contents License: https://opendatacommons.org/licenses/dbcl/1-0/
 
 © OpenStreetMap contributors (https://www.openstreetmap.org/copyright)
-Elevation: © swisstopo (swissALTI3D, Open Government Data); coarse levels (L1–L4)
-and gaps outside CH/FL: Copernicus DEM © DLR e.V. 2010-2014 and © Airbus Defence and Space
+Elevation: © swisstopo (swissALTI3D, Open Government Data); Austria: BEV – Bundesamt
+für Eich- und Vermessungswesen (Airborne Laserscanning DTM, CC BY 4.0,
+https://creativecommons.org/licenses/by/4.0/); coarse levels (L1–L4)
+and remaining gaps: Copernicus DEM © DLR e.V. 2010-2014 and © Airbus Defence and Space
 GmbH 2014-2018, provided under COPERNICUS by the European Union and ESA.
+Buildings: © swisstopo (swissBUILDINGS3D 3.0 Switzerland, 2.0 Liechtenstein, Open
+Government Data); Austria: © OpenStreetMap contributors.
 
 The source code of this repository is MIT licensed (see the LICENSE file at the
 repository root); this file covers only the data in this directory.
