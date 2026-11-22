@@ -27,7 +27,8 @@ HERE = Path(__file__).resolve().parent
 ATTRIBUTION = [
     "Höhen: © swisstopo (swissALTI3D, OGD); Österreich: BEV – Bundesamt für Eich- und Vermessungswesen (ALS DTM, CC BY 4.0)",
     "Grobe Stufen, Panorama: Copernicus DEM © DLR e.V. 2010-2014 und © Airbus Defence and Space GmbH 2014-2018, bereitgestellt im Rahmen von COPERNICUS durch die EU und die ESA",
-    "Strassen, Bodenbedeckung, Gebäude: © OpenStreetMap-Mitwirkende (ODbL)",
+    "Gebäude: © swisstopo (swissBUILDINGS3D 3.0 Schweiz, 2.0 Liechtenstein, OGD)",
+    "Strassen, Bahn, Gewässer, Bodenbedeckung, Gebäude Österreich: © OpenStreetMap-Mitwirkende (ODbL)",
 ]
 
 
