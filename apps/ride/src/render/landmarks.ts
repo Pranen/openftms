@@ -224,12 +224,14 @@ export function buildLandmark(tri: Tri, l: LandmarkRecord, x0: number, z0: numbe
   switch (LANDMARK[l.style]) {
     case 'castle_vaduz': {
       // Schloss Vaduz: white walls on the rock, red roofs, the round bastion and the tall keep
-      m.box(0, 0, -6, 16, hu * 0.85, hv * 0.8, K.white, TEX.house);
-      m.gable(0, 0, 16, hu * 0.85, hv * 0.8, hv * 0.7, K.redRoof, K.white);
-      m.cylinder(-hu * 0.75, 0, -6, 13, hv * 0.55, K.white, TEX.stone, 12);
-      m.spire(-hu * 0.75, 0, 13, hv * 0.6, 6, K.redRoof, 12, TEX.roofTiles);
-      m.box(hu * 0.55, 0, -6, 34, 5, 5, K.white, TEX.plain);
-      m.spire(hu * 0.55, 0, 34, 5.4, 9, K.redRoof, 4, TEX.roofTiles);
+      const rise = Math.min(9, hv * 0.4);
+      m.box(0, 0, -6, 15, hu * 0.7, hv * 0.6, K.white, TEX.house);
+      m.gable(0, 0, 15, hu * 0.7, hv * 0.6, rise, K.redRoof, K.white);
+      m.cylinder(-hu * 0.7, hv * 0.1, -6, 13, hv * 0.4, K.white, TEX.stone, 12);
+      m.spire(-hu * 0.7, hv * 0.1, 13, hv * 0.45, 6, K.redRoof, 12, TEX.roofTiles);
+      // the keep rises well above the roofs
+      m.box(hu * 0.45, 0, -6, 15 + rise + 12, 5.5, 5.5, K.white, TEX.plain);
+      m.spire(hu * 0.45, 0, 15 + rise + 12, 6, 8, K.redRoof, 4, TEX.roofTiles);
       break;
     }
     case 'cathedral': {

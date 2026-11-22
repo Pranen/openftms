@@ -65,6 +65,7 @@ def main() -> None:
     print("graph")
     g = G.build(osm, (e_min, n_min, e_max, n_max), dem)
     print("  " + G.stats(g))
+    print("  " + G.grade_report(g))
     graph_files = G.write(g, out)
 
     print("tiles")
@@ -98,8 +99,8 @@ def main() -> None:
         box = levels_cfg[lvl]
         print(f"level {lvl} (laser scan inside the box, Copernicus outside{', OSM land cover' if lvl == 1 else ''})")
         lvl_areas = None
-        if lvl == 1:  # land cover from OSM where mapped (the region extracts, clipped to the L1 box)
-            lvl_areas = T.AreaIndex(read([osm_clip(osm_extract(r), f"{args.world}-L1-{r}", *box) for r in cfg["osm"]]).areas)
+        if lvl == 1:  # land cover from OSM where mapped (the areas read for the region; beyond them guessed)
+            lvl_areas = areas
         extra = None
         if lvl == 1:  # buildings as boxes, so villages do not vanish beyond the L0 tiles
             extra = lambda ix, iy: [(b"BLDQ", T.coarse_boxes(bsrc.boxes, ix, iy, P.SIZES[1], P.H_SCALE))]

@@ -122,7 +122,7 @@ export function decodeTile(buf: ArrayBuffer): Tile {
   const landmarks: LandmarkRecord[] = [];
   if (ms) {
     const count = dv.getUint32(ms[0], true);
-    for (let k = 0, o = ms[0] + 4; k < count; k++, o += 18) {
+    for (let k = 0, o = ms[0] + 4; k < count; k++, o += 16) {
       landmarks.push({
         style: dv.getUint8(o),
         cx: dv.getInt16(o + 2, true) / 10,

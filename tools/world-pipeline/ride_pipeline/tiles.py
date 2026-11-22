@@ -291,9 +291,13 @@ class BuildingSource:
                         break
             ring = np.asarray(foot.exterior.coords)
             form = ROOF_FORM[b["roof"]]
-            eave = max(2.2, b["eave"])
+            eave, ridge = b["eave"], b["ridge"]
+            if b.get("roof_only"):  # roofs without walls in the data: heights against the terrain
+                g = float(dem.sample(ring[:, 0], ring[:, 1]).min())
+                eave, ridge = b["eave_abs"] - g, b["ridge_abs"] - g
+            eave = max(2.2, eave)
             style = building_style(kind, b["kind"], eave, foot.area, form == 0)
-            recs.append(_record(ring, te, tn, dem, eave, b["ridge"], form, style))
+            recs.append(_record(ring, te, tn, dem, eave, ridge, form, style))
         for j in np.nonzero(inside(self.osm_centre))[0]:
             tags, outer, p = self.osm[j]
             if self.sb_tree is not None and any(self.sb[i]["foot"].intersection(p).area > 0.3 * p.area

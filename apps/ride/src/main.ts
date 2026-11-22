@@ -87,7 +87,7 @@ async function boot(): Promise<void> {
   chase.update(attract, 1);
   updateRider(attract, 0, 0);
   requestAnimationFrame(frame);
-  if (import.meta.env.DEV) (window as unknown as { __ride: unknown }).__ride = { world, scene, camera, get session() { return session; }, retro, get trees() { return trees; }, views, get fly() { return fly; } };
+  if (import.meta.env.DEV) (window as unknown as { __ride: unknown }).__ride = { world, scene, camera, get session() { return session; }, retro, get trees() { return trees; }, views, get fly() { return fly; }, trains };
 }
 
 // --- tile streaming --------------------------------------------------------------------

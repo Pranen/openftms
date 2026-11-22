@@ -197,8 +197,8 @@ export const SCENERY = {
   motorway: { lift: 0.1, edgeInset: 0.5, line: 0.2, railLow: 0.45, railHigh: 0.8 },
   rail: { lift: 0.15, ballast: 3.4, gauge: 1.435, railWidth: 0.12, railHeight: 0.18, mastSpacing: 55, mastOffset: 3.2, mastHeight: 7.2, wireHeight: 6 },
   bridge: { deck: 1.4, overhang: 0.6, parapet: 1.0, pierSpacing: 32, pier: 0.9 },
-  power: { height: 34, base: 3.5, top: 0.8, arms: [24, 30], armLength: 7, armThickness: 0.5, sag: 0.04, cable: 0.12 },
-  minorPower: { height: 11, base: 0.18, top: 0.12, arms: [10], armLength: 1.2, armThickness: 0.15, sag: 0.02, cable: 0.06 },
+  power: { height: 34, base: 3.5, top: 0.8, arms: [24, 30], armLength: 7, armThickness: 0.5, sag: 0.04, cable: 0.35 },
+  minorPower: { height: 11, base: 0.18, top: 0.12, arms: [10], armLength: 1.2, armThickness: 0.15, sag: 0.02, cable: 0.15 },
   water: { lift: 0.12, maxBand: 25 },
 };
 
@@ -211,6 +211,7 @@ export const TRAIN = {
   lift: 0.3,
   firstDelay: 8,
   pause: 45,
+  retry: 3,
   spawnRadius: 1500,
   minPath: 600,
   colours: { body: 0xd42a24, windows: 0x2a2e36, roof: 0x9a9ea6, under: 0x303030 },

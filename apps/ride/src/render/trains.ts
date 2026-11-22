@@ -159,7 +159,8 @@ export class Trains {
       this.wait -= dt;
       if (this.wait > 0) return;
       this.path = this.chain(cam.x, cam.z);
-      this.wait = TRAIN.pause;
+      // no railway near (or its tiles still loading): look again soon
+      this.wait = this.path ? TRAIN.pause : TRAIN.retry;
       if (!this.path) return;
       this.s = 0;
     }

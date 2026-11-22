@@ -202,8 +202,9 @@ export function buildScenery(lines: SceneryLine[], x0: number, z0: number, groun
         break;
       }
       default: {
-        // water: a band draped over the terrain (wide rivers are areas in the land cover instead)
-        if (l.width > SCENERY.water.maxBand) break;
+        // water: a band draped over the terrain; rivers are areas in the land cover already (a band in
+        // the middle of them shows as a stripe), so only streams and canals
+        if (l.kind === LINE_KIND.river || l.width > SCENERY.water.maxBand) break;
         const W = SCENERY.water;
         const F2 = F.map((p) => ({ ...p, y: Math.min(p.y, ground(p.x, p.z)) }));
         band(B, F2, half, -half, W.lift, C.water, drawn);

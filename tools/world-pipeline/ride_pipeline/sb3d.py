@@ -130,7 +130,8 @@ def analyse(faces: list[np.ndarray]) -> dict | None:
         foot = max(parts, key=lambda p: p.area)
     foot = shapely.Polygon(foot.exterior)  # courtyards are drawn as roof
     eave = min(float(v[:, 2].min()) for v in rf)
-    return {"foot": foot, "z": zmin, "eave": eave - zmin, "ridge": zmax - zmin, "roof": form}
+    return {"foot": foot, "z": zmin, "eave": eave - zmin, "ridge": zmax - zmin, "roof": form, "eave_abs": eave,
+            "ridge_abs": zmax}
 
 
 # --- sheets ----------------------------------------------------------------------------
@@ -192,13 +193,21 @@ def _sheet3(item: str, href: str) -> list[dict]:
                 zf.extractall(dest)
         print(f"  swissBUILDINGS3D 3.0: sheet {sheet} ...")
         out = []
-        for wkb, attrs in features(dest / gdb, "Building_solid"):
-            kind = KINDS.get(attrs.get("OBJEKTART", ""))
+        # some sheets hold only roofs (no solids): then the heights are absolute and the ground comes from the DEM
+        try:
+            feats = list(features(dest / gdb, "Building_solid"))
+            roof_only = False
+        except KeyError:
+            feats = list(features(dest / gdb, "Roof_solid"))
+            roof_only = True
+        for wkb, attrs in feats:
+            kind = KINDS.get(attrs.get("OBJEKTART", ""), "yes" if roof_only else None)
             if wkb is None or kind is None:
                 continue
             a = analyse(_faces_from_wkb(wkb))
             if a:
                 a["kind"] = kind
+                a["roof_only"] = roof_only
                 out.append(a)
         return out
 

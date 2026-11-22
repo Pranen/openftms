@@ -36,12 +36,12 @@ CATALOGUE: list[tuple[str, tuple[str, ...] | tuple[float, float]]] = [
     ("cube_black", ("Kunstmuseum Liechtenstein",)),
     ("cube_white", ("Hilti Art Foundation",)),
     ("schattenburg", ("Schattenburg",)),
-    ("cathedral", ("Dom St. Nikolaus", "Domkirche St. Nikolaus", "Dom St. Nikolaus Feldkirch")),
+    ("cathedral", ("Dom Sankt Nikolaus", "Dom St. Nikolaus")),  # Feldkirch
     ("werdenberg", ("Schloss Werdenberg",)),
     ("sargans", ("Schloss Sargans",)),
     ("ruin", ("Ruine Alt-Schellenberg",)),
     ("ruin", ("Ruine Neu-Schellenberg",)),
-    ("church_tower", (47.2097, 9.5063)),  # Bendern, church on the hill
+    ("church_tower", (47.2115, 9.5039)),  # Bendern, church on the hill
     ("covered_bridge", ("Alte Rheinbrücke Vaduz", "Alte Rheinbrücke")),
 ]
 
