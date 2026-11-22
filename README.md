@@ -10,7 +10,7 @@ Zero-dependency TypeScript library for Web Bluetooth fitness devices — FTMS tr
 | `apps/ride` | Ride: indoor-cycling PWA in the Rheintal, PS1 look ([plan](apps/ride/PLAN.md)); `npm run dev:ride` |
 | `packages/route-graph`, `packages/sim-core` | Ride's road graph reader and simulation core (physics, grade controller, navigator) |
 | `tools/world-pipeline` | Python: swisstopo/OSM → Ride world data ([README](tools/world-pipeline/README.md)) |
-| `docs` | [API](docs/api.md), [How-To: interval training](docs/howto-interval-training.md), [troubleshooting](docs/troubleshooting.md) (German) |
+| `docs` | [API](docs/api.md), [How-To: interval training](docs/howto-interval-training.md), [troubleshooting](docs/troubleshooting.md), [deployment](docs/deployment.md) (German) |
 
 ## Library at a glance
 

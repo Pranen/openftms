@@ -88,10 +88,10 @@ describe.skipIf(!graphJson)('pipeline graph (apps/ride/public/world)', () => {
       const b = g.point(e, g.length(e));
       expect(Math.hypot(a.x - g.nodeX(g.from(e)), a.z - g.nodeZ(g.from(e)))).toBeLessThan(0.05);
       expect(Math.hypot(b.x - g.nodeX(g.to(e)), b.z - g.nodeZ(g.to(e)))).toBeLessThan(0.05);
-      // heights plausible for the Rheintal
+      // heights plausible for the region: Rhine valley floor (~400 m) up to the Pfälzerhütte (2108 m) above Malbun
       const h = g.height(e, g.length(e) / 2);
       expect(h).toBeGreaterThan(380);
-      expect(h).toBeLessThan(1600) // up to Gafadura (1420 m);
+      expect(h).toBeLessThan(2200);
     }
     // every node is reachable via its exits
     for (let n = 0; n < g.nodeCount; n++) expect(g.exits(n).length).toBeGreaterThan(0);
