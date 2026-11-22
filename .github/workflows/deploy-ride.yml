@@ -1,0 +1,30 @@
+name: Deploy Ride
+
+# Gemeinsamer Workflow aus Pranen/pwa-infrastructure: testen, bauen, per rsync nach
+# /var/www/pwa/ride, ausgeliefert vom zentralen Caddy unter ride.pranen.li (docs/deployment.md).
+# Vorerst nur von Hand: Nach dem ersten erfolgreichen Deploy die push-Zeilen aktivieren. Dann wird
+# deployt, wenn sich Ride, die Pakete oder die Abhängigkeiten ändern.
+on:
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'apps/ride/**'
+  #     - '!apps/ride/**/*.md'
+  #     - 'apps/ride/public/world/*.md'
+  #     - 'packages/**'
+  #     - '!packages/**/*.md'
+  #     - 'package-lock.json'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: Pranen/pwa-infrastructure/.github/workflows/deploy-static.yml@main
+    with:
+      app: ride
+      # Bibliothek, Pakete und Ride: ein roter Test verhindert das Deployment
+      test: npm test
+      build: npm run build -w ride
+      output: apps/ride/dist
+    secrets:
+      # Eigener Schlüssel, der nur nach /var/www/pwa/ride schreiben darf
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY_RIDE }}
