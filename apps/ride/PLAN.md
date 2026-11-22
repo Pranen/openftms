@@ -521,6 +521,8 @@ pushen, kein PR/Merge ohne Rückfrage.
 - **Fassaden:** Pixel-Atlas 128 × 32 (16 px je Kachel, im Code gezeichnet wie in li-auto) mit Fensterachsen pro
   Stil, Ziegel-, Blech-, Schiefer- und Kiesdach. Ganze Fensterachsen pro Wand und ganze Geschosse bis zur Traufe.
   Affin wie die PS1 (uv·w und w perspektivisch interpoliert, dann geteilt), schaltet mit dem Vertex-Wackeln (`W`) um.
+  **Wieder abgeschaltet (22.11.2026, Rückmeldung «alle gleich, sehr unruhig»):** `BUILDING.textures = false`,
+  Häuser in Wand- und Dachfarben; Code und UVs bleiben für einen zweiten Anlauf.
 - **Kulisse (LINE):** 235 km Autobahn (Band, Randlinien, Leitplanken), 263 km Bahn (Schotter, Schienen,
   Fahrleitungsmasten alle 55 m), 547 km Stromleitungen (Gittermasten bzw. Holzmasten, durchhängende Seile), 2'771 km
   Gewässerlinien (Bäche und Kanäle als Band; Flüsse sind Flächen im CODE). Autobahn und Bahn werden ins Gelände

@@ -275,6 +275,8 @@ export const ROAD_COLOR_DEFAULT = 0x66666c;
 export const GRAVEL_COLOR = 0xa89a78;
 
 export const BUILDING = {
+  /** Pixel facade and roof textures (render/textures.ts); off: plain wall and roof colours. */
+  textures: false,
   walls: [0xe9e1cf, 0xf2efe6, 0xd9c7a3, 0xcfb894, 0xe0d6c0, 0xd8d2c4, 0xc9b79a, 0xefe6d2],
   roofs: [0x8c3b2e, 0x6e2f27, 0x5a5550, 0x7a4a32, 0x8a4434, 0x4e4a48, 0x9a5a3a, 0x6a3a2c],
   flatRoof: 0x77736c,

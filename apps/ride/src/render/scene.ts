@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { color, mix, positionLocal, smoothstep } from 'three/tsl';
-import { RENDER } from '../config';
+import { BUILDING, RENDER } from '../config';
 import type { TileMesh } from '../workers/world-worker';
 import { retroMaterial, texturedRetroMaterial } from './retro';
 import { ATLAS, buildingAtlas } from './textures';
@@ -51,7 +51,10 @@ function geometry(position: Float32Array, col: Float32Array | Uint8Array): THREE
 
 const terrainMat = retroMaterial();
 const coarseMat = retroMaterial({ curvature: true });
-const buildingMat = texturedRetroMaterial(buildingAtlas(), ATLAS.cols, ATLAS.rows, { side: THREE.DoubleSide });
+// plain colours by default (the facade textures looked restless and alike); BUILDING.textures switches them on
+const buildingMat = BUILDING.textures
+  ? texturedRetroMaterial(buildingAtlas(), ATLAS.cols, ATLAS.rows, { side: THREE.DoubleSide })
+  : retroMaterial({ side: THREE.DoubleSide });
 const roadMat = retroMaterial({ side: THREE.DoubleSide, polygonOffset: 2, snap: false });
 // bands are drawn in class order; at equal depth the later (bigger) road wins
 roadMat.depthFunc = THREE.LessEqualDepth;
