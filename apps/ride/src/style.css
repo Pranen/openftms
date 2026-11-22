@@ -47,7 +47,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
+  overflow-y: auto;
   gap: 10px;
   background: rgba(8, 14, 30, 0.82);
   text-align: center;
@@ -67,8 +68,20 @@ body {
 }
 .overlay button:hover:not(:disabled) { border-color: #ffd84a; color: #ffd84a; }
 .overlay button:disabled { opacity: 0.4; cursor: default; }
+.menu-row { display: flex; gap: 28px; align-items: center; justify-content: center; flex-wrap: wrap; max-height: 100%; }
+.menu-main { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.startpick { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+#startmap { width: 300px; image-rendering: pixelated; border: 3px solid #fff; cursor: crosshair; }
+#start-label { max-width: 300px; color: #ffd84a; margin-top: 2px; }
+.places { display: flex; flex-wrap: wrap; gap: 4px; max-width: 320px; justify-content: center; }
+.overlay .places button { font-size: 8px; padding: 5px 6px; border-width: 2px; }
 .help { max-width: 760px; line-height: 1.8; opacity: 0.85; }
 .err { color: #ff6a3d; }
+
+@media (max-height: 760px) {
+  #startmap { width: 220px; }
+  .help { display: none; }
+}
 
 @media (max-width: 600px) {
   .buttons { grid-template-columns: 1fr; }

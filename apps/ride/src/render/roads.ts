@@ -4,7 +4,7 @@
  */
 import { Color } from 'three';
 import { SEC_BRIDGE, SEC_TUNNEL, type RouteGraph } from 'route-graph';
-import { GRAVEL_COLOR, JUNCTION, MARKING, RENDER, ROAD_COLOR, ROAD_COLOR_DEFAULT, ROUNDABOUT, SCENERY } from '../config';
+import { GRAVEL_COLOR, JUNCTION, MARKING, RENDER, ROAD_COLOR, ROAD_COLOR_DEFAULT, ROUNDABOUT, SCENERY, TUNNEL } from '../config';
 
 /** Lift of a road band above its profile: bigger roads lie on top where bands overlap. */
 export function roadLift(cls: number): number {
@@ -105,15 +105,76 @@ function band(
   }
 }
 
-/** Open stretches of an edge (outside tunnels), shortened by gapA / gapB at its start / end. */
+/** The drawn stretch of an edge (tunnels included: the road runs on inside the tube), shortened by gapA / gapB. */
 function stretches(g: RouteGraph, e: number, gapA: number, gapB = gapA): [number, number][] {
   const L = g.length(e);
-  let out: [number, number][] = [[gapA, L - gapB]];
-  for (const t of g.sections(e)) {
-    if (!(t.flags & SEC_TUNNEL)) continue;
-    out = out.flatMap(([a, b]) => [[a, Math.min(b, t.start)], [Math.max(a, t.end), b]] as [number, number][]);
+  return [[gapA, L - gapB] as [number, number]].filter(([a, b]) => b - a > 1);
+}
+
+const tubeColour = new Color(TUNNEL.wall);
+const portalColour = new Color(TUNNEL.portal);
+const lampColour = new Color(TUNNEL.lamp);
+
+/**
+ * Tunnel tube along a tunnel section: walls and a vaulted ceiling around the road (seen from inside; the
+ * terrain above is culled from below), a row of lamps under the crown, and a concrete portal at each end.
+ */
+function tunnelBody(g: RouteGraph, e: number, s0: number, s1: number, hw: number, lift: number, sink: Sink): void {
+  const T = TUNNEL;
+  const L = g.length(e);
+  const W = hw + T.sidewalk;
+  // profile (offset left +, height above the road): walls, then the vault
+  const prof = [
+    [-W, -0.3],
+    [-W, T.wallHeight],
+    [-W * 0.72, T.wallHeight + (T.crown - T.wallHeight) * 0.7],
+    [0, T.crown],
+    [W * 0.72, T.wallHeight + (T.crown - T.wallHeight) * 0.7],
+    [W, T.wallHeight],
+    [W, -0.3],
+  ];
+  const quad = (a: number[], b: number[], c: number[], d: number[], k: Color) => {
+    const { pos, col } = sink((a[0]! + c[0]!) / 2, (a[2]! + c[2]!) / 2);
+    pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+    for (let v = 0; v < 6; v++) col.push(k.r, k.g, k.b);
+  };
+  const n = Math.max(1, Math.ceil((s1 - s0) / 4));
+  const at = (s: number) => ({ ...frame(g, e, s, L), y: roadHeight(g, e, s) + lift });
+  const P = (f: ReturnType<typeof at>, o: number, h: number) => [f.x + f.nx * o, f.y + h, f.z + f.nz * o];
+  let prev = at(s0);
+  for (let k = 1; k <= n; k++) {
+    const cur = at(s0 + ((s1 - s0) * k) / n);
+    for (let i = 0; i + 1 < prof.length; i++) {
+      const [o0, h0] = prof[i]!;
+      const [o1, h1] = prof[i + 1]!;
+      quad(P(prev, o0!, h0!), P(cur, o0!, h0!), P(cur, o1!, h1!), P(prev, o1!, h1!), tubeColour);
+    }
+    // raised walkways between the road and the walls
+    for (const side of [1, -1]) quad(P(prev, side * (hw - 0.1), 0.15), P(cur, side * (hw - 0.1), 0.15), P(cur, side * W, 0.15), P(prev, side * W, 0.15), portalColour);
+    // lamps: short bright strips under the crown every few metres
+    if (k % 2 === 0) quad(P(prev, 0.35, T.crown - 0.05), P(cur, 0.35, T.crown - 0.05), P(cur, -0.35, T.crown - 0.05), P(prev, -0.35, T.crown - 0.05), lampColour);
+    prev = cur;
   }
-  return out.filter(([a, b]) => b - a > 1);
+  // portals: a concrete face around the opening, set a little into the open
+  for (const [s, dir] of [
+    [s0, -1],
+    [s1, 1],
+  ] as const) {
+    const f = at(s);
+    const tx = -f.nz * dir;
+    const tz = f.nx * dir;
+    const Q = (o: number, h: number) => [f.x + f.nx * o + tx * 0.3, f.y + h, f.z + f.nz * o + tz * 0.3];
+    const ow = W + T.portalSide;
+    const top = T.crown + T.portalTop;
+    // wing walls reach down into the slope (the terrain falls away beside the road)
+    quad(Q(-ow, -T.portalFoot), Q(-W, -T.portalFoot), Q(-W, top), Q(-ow, top), portalColour);
+    quad(Q(W, -T.portalFoot), Q(ow, -T.portalFoot), Q(ow, top), Q(W, top), portalColour);
+    for (let i = 1; i + 1 < prof.length - 1; i++) {
+      const [o0, h0] = prof[i]!;
+      const [o1, h1] = prof[i + 1]!;
+      quad(Q(o0!, h0!), Q(o1!, h1!), Q(o1!, top), Q(o0!, top), portalColour);
+    }
+  }
 }
 
 /**
@@ -274,7 +335,10 @@ export function buildRoadTile(
     const c = new Color(surf >= 3 && surf <= 5 ? GRAVEL_COLOR : (ROAD_COLOR[cls] ?? ROAD_COLOR_DEFAULT));
     const lift = roadLift(cls);
     for (const [a, b] of stretches(g, e, 0)) band(g, e, a, b, 0, hw * 2, lift, c, road, 4);
-    if (ground) for (const t of g.sections(e)) if (t.flags & SEC_BRIDGE && !(t.flags & SEC_TUNNEL)) bridgeBody(g, e, t.start, t.end, hw, lift, road, ground);
+    for (const t of g.sections(e)) {
+      if (t.flags & SEC_TUNNEL) tunnelBody(g, e, t.start, t.end, hw, lift, road);
+      else if (ground && t.flags & SEC_BRIDGE) bridgeBody(g, e, t.start, t.end, hw, lift, road, ground);
+    }
     // markings only on paved roads
     if (surf > 2 || cls < 3) continue;
     const ml = lift + MARKING.lift;

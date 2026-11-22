@@ -202,6 +202,49 @@ export const SCENERY = {
   water: { lift: 0.12, maxBand: 25 },
 };
 
+/** Start places on the title map (LV95; the start snaps to the nearest road). */
+export const START_PLACES: [string, number, number][] = [
+  ['Eschen', 2757829, 1230936],
+  ['Vaduz', 2757936, 1223209],
+  ['Schaan', 2756963, 1225852],
+  ['Triesenberg', 2759604, 1220695],
+  ['Steg', 2761749, 1219975],
+  ['Malbun', 2764815, 1218947],
+  ['Balzers', 2756798, 1214838],
+  ['Gafadura', 2761190, 1229413],
+  ['Feldkirch', 2763471, 1234124],
+  ['Oberriet', 2760813, 1243305],
+  ['Buchs', 2754644, 1226081],
+  ['Sargans', 2752217, 1212717],
+  ['Bad Ragaz', 2756906, 1207834],
+  ['Landquart', 2761119, 1203943],
+  ['Walenstadt', 2742142, 1220809],
+];
+
+/** Title map (ui/startmap.ts): canvas size (px), road colours by class, how far a click snaps to a road (m). */
+export const START_MAP = {
+  width: 300,
+  snap: 400,
+  /** Places start on a road of at least this class (3 = residential), clicks on the nearest way. */
+  placeClass: 3,
+  colours: { bg: '#0e1a30', path: '#3d5a46', road: '#8a94a8', main: '#e8d8a0', place: '#ffffff', start: '#ff6a3d', box: '#2a3c64' },
+};
+
+/** Road tunnels (render/roads.ts): tube profile and portal (m), colours. */
+export const TUNNEL = {
+  sidewalk: 1.0,
+  wallHeight: 3.6,
+  crown: 5.6,
+  portalSide: 11,
+  portalTop: 3,
+  portalFoot: 8,
+  /** Terrain cells over a tunnel lower than crown + cover are cut out (the portal and tube show there). */
+  cover: 1.0,
+  wall: 0x6e6c68,
+  portal: 0xa8a49c,
+  lamp: 0xfff0b0,
+};
+
 /** A train now and then on the railway near the camera (render/trains.ts). Speed m/s, times s, lengths m. */
 export const TRAIN = {
   cars: 4,

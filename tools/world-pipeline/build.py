@@ -75,12 +75,13 @@ def main() -> None:
     print("  " + S.summary(lines))
     line_index = S.LineIndex(lines)
     roads = T.road_samples(g, G.ROAD_HALF_WIDTH, S.carve_samples(lines))
+    tunnels = T.tunnel_samples(g, G.ROAD_HALF_WIDTH)
     level0: dict[str, str] = {}
     # column by column (west to east, south to north): neighbouring tiles share elevation blocks in the cache
     for ix in range(int(e_min // T.TILE), int(e_max // T.TILE)):
         for iy in range(int(n_min // T.TILE), int(n_max // T.TILE)):
             te, tn = ix * T.TILE, iy * T.TILE
-            h = T.terrain_heights(dem, te, tn, roads)
+            h = T.terrain_heights(dem, te, tn, roads, tunnels)
             code = T.landcover(areas, te, tn)
             bldg = bsrc.tile(dem, te, tn, skip=landmarks.covers)
             lmrk = landmarks.tile(te, tn, T.TILE, T.H_SCALE, T.H_OFFSET)

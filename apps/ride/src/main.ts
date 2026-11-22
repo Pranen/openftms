@@ -11,6 +11,7 @@ import { Trains } from './render/trains';
 import { createScenes, disposeGroup, nodeHeight, roadHeight, roadLift, tileView, type TileView } from './render/scene';
 import { Hud } from './ui/hud';
 import { TileMap } from './ui/tilemap';
+import { StartMap } from './ui/startmap';
 import { chunkChild } from './world/select';
 import { World } from './world/world';
 import type { TileMesh } from './workers/world-worker';
@@ -31,6 +32,7 @@ let trees: Trees;
 const trains = new Trains();
 const views = new Map<string, { view: TileView; level: number; ix: number; iy: number; chunks: number }>();
 const tileMap = new TileMap();
+let startMap: StartMap | null = null;
 /** The ride behind the menu (rider standing at the spawn). */
 let attract: Ride | null = null;
 /** The ridden line uses the roundabout ring as drawn. */
@@ -63,8 +65,16 @@ async function boot(): Promise<void> {
   scene.add(trees.group);
   scene.add(trains.group);
   scene.add(riderModel.group);
+  startMap = new StartMap($<HTMLCanvasElement>('startmap'), $('places'), $('start-label'), world.graph, world.manifest.box, (e, n) => world.toWorld(e, n), () => {
+    // show the place behind the menu: the rider stands there, the tiles around it stream in
+    attract = new Ride(world.graph, spawnPos(), { line: LINE });
+    chase.reset();
+    chase.update(attract, 1);
+    updateRider(attract, 0, 0);
+  });
   // first the tiles around the spawn, then the menu
-  const sp = world.toWorld(...world.manifest.spawn);
+  const first = spawnPos();
+  const sp = world.graph.point(first.edge, first.s);
   world.update(sp.x, sp.z);
   while (!world.settled || arrivals.length) {
     addArrivals(50);
@@ -150,6 +160,8 @@ function totalLength(): number {
 }
 
 function spawnPos() {
+  const chosen = startMap?.start;
+  if (chosen) return { edge: chosen.edge, dir: 1 as const, s: chosen.s };
   const [e, n] = world.manifest.spawn;
   const p = world.toWorld(e, n);
   const near = world.graph.nearest(p.x, p.z, 500) ?? { edge: 0, s: 0, dist: 0 };

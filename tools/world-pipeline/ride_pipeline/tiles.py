@@ -36,6 +36,11 @@ MEADOW, FOREST, ORCHARD, SETTLEMENT, ROCK, WATER, GLACIER, FARMLAND = range(8)
 CARVE_CORE = 8.0
 CARVE_FALLOFF = 22.0
 ROAD_DROP = 0.3  # terrain this far below the road surface
+# over road tunnels the terrain stays at least this far above the road (the client draws a tube with a 5.6 m
+# crown); nodes within the tube's half width + TUNNEL_REACH of the tunnel axis, and closer to it than to an
+# open road, are raised (otherwise the carving of the approach pulls the hill down into the tube)
+TUNNEL_COVER = 8.0
+TUNNEL_REACH = 9.0
 
 
 def landcover_code(t: dict[str, str]) -> int | None:
@@ -115,8 +120,29 @@ def road_samples(graph: dict, half_width: list[float], extra=None):
     return p, np.concatenate(hs), np.concatenate(ws), cKDTree(p)
 
 
-def terrain_heights(dem: Dem, te: float, tn: float, roads) -> np.ndarray:
-    """Node heights of one tile (row 0 = north edge), road carved in. roads: road_samples() plus its KD tree."""
+def tunnel_samples(graph: dict, half_width: list[float]):
+    """Points every 2 m inside road tunnels of the ride network: (en, height, half width, KD tree) or None."""
+    pts, hs, ws = [], [], []
+    for ei, s0, s1, flags in graph["sections"]:
+        if not flags & 2:  # SEC_TUNNEL
+            continue
+        e = graph["edges"][ei]
+        s, h = graph["profiles"][ei]
+        ss = np.arange(s0, s1 + 1e-9, 2.0)
+        if len(ss) == 0:
+            continue
+        pts.append(sample_at(e.en, ss))
+        hs.append(np.interp(ss, s, h))
+        ws.append(np.full(len(ss), half_width[e.cls] + 1.0))
+    if not pts:
+        return None
+    p = np.vstack(pts)
+    return p, np.concatenate(hs), np.concatenate(ws), cKDTree(p)
+
+
+def terrain_heights(dem: Dem, te: float, tn: float, roads, tunnels=None) -> np.ndarray:
+    """Node heights of one tile (row 0 = north edge), road carved in, covered over tunnels.
+    roads: road_samples() plus its KD tree; tunnels: tunnel_samples()."""
     i = np.arange(N)
     E, Nn = np.meshgrid(te + i * CELL, tn + TILE - i * CELL)
     h = dem.sample(E, Nn, smooth=True)
@@ -134,6 +160,16 @@ def terrain_heights(dem: Dem, te: float, tn: float, roads) -> np.ndarray:
         flat = h.ravel()
         flat[ok] = flat[ok] * (1 - w[ok]) + target[ok] * w[ok]
         h = flat.reshape(h.shape)
+    if tunnels is not None:
+        tp, th, tw, ttree = tunnels
+        dt, it = ttree.query(np.c_[E.ravel(), Nn.ravel()], distance_upper_bound=float(tw.max() + TUNNEL_REACH))
+        near = np.isfinite(dt)
+        near[near] &= dt[near] < tw[it[near]] + TUNNEL_REACH
+        near[near] &= dt[near] < d[near]  # d: distance to the open road (inf where none)
+        if near.any():
+            flat = h.ravel()
+            flat[near] = np.maximum(flat[near], th[it[near]] + TUNNEL_COVER)
+            h = flat.reshape(h.shape)
     return h
 
 

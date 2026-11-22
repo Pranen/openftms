@@ -4,11 +4,11 @@
  * on the main thread; it must stay responsive). Returns transferable arrays.
  */
 import { ShapeUtils, Vector2 } from 'three';
-import { BUILDING, LANDCOVER, SCENERY, STREAM, TREES } from '../config';
+import { BUILDING, LANDCOVER, SCENERY, STREAM, TREES, TUNNEL } from '../config';
 import { STYLE, TEX } from '../world/atlas';
-import { RouteGraph, type GraphMeta } from 'route-graph';
+import { RouteGraph, SEC_TUNNEL, type GraphMeta } from 'route-graph';
 import { plantTile } from '../world/plant';
-import { buildRoadTile, type RoadMesh } from '../render/roads';
+import { buildRoadTile, roadHeight, type RoadMesh } from '../render/roads';
 import { buildScenery, type SceneryMesh } from '../render/scenery';
 import { buildLandmark, churchTower, modelAt } from '../render/landmarks';
 import { LINE_KIND, type LandmarkRecord, type SceneryLine } from '../world/tile';
@@ -82,7 +82,7 @@ function hash(i: number, j: number): number {
  * its border that covers the cracks to neighbours of another level.
  */
 function terrain(h: Float32Array, codes: Uint8Array, n: number, cell: number, x0: number, z0: number, ix: number, iy: number,
-  chunks: number, skirt: number, step: number) {
+  chunks: number, skirt: number, step: number, holes?: Uint8Array) {
   const k = (n - 1) / chunks; // cells per chunk side
   const m = k / step; // quads per chunk side after thinning
   const out: { position: Float32Array; color: Uint8Array }[] = [];
@@ -112,6 +112,7 @@ function terrain(h: Float32Array, codes: Uint8Array, n: number, cell: number, x0
       const j0 = cj * k;
       for (let j = j0; j < j0 + k; j += step) {
         for (let i = i0; i < i0 + k; i += step) {
+          if (holes?.[j * n + i]) continue; // tunnel portal: the tube shows instead
           const a = colourAt(i, j, 0);
           node(i, j, a);
           node(i, j + step, a);
@@ -144,10 +145,42 @@ function terrain(h: Float32Array, codes: Uint8Array, n: number, cell: number, x0
         edge(i0, j0 + t, i0, j0 + t + step);
         edge(i0 + k, j0 + t, i0 + k, j0 + t + step);
       }
-      out.push({ position, color });
+      // cells left out (holes) shorten the buffers
+      out.push(p < position.length ? { position: position.slice(0, p), color: color.slice(0, (p / 3) * 4) } : { position, color });
     }
   }
   return out;
+}
+
+/**
+ * Terrain cells over road tunnels that would reach into the tube (near the portals, where the hill is lower
+ * than the vault): left out of the terrain mesh, so the portal and the tube show (L0 only).
+ */
+function tunnelHoles(g: RouteGraph, h: Float32Array, n: number, cell: number, x0: number, z0: number): Uint8Array | undefined {
+  const size = (n - 1) * cell;
+  let holes: Uint8Array | undefined;
+  for (const e of g.edgesIn(x0 - 20, z0 - 20, x0 + size + 20, z0 + size + 20)) {
+    for (const t of g.sections(e)) {
+      if (!(t.flags & SEC_TUNNEL)) continue;
+      const reach = g.halfWidth(e) + TUNNEL.sidewalk + cell * 0.5;
+      for (let s = t.start; s <= t.end; s += 2) {
+        const p = g.point(e, s);
+        const top = roadHeight(g, e, s) + TUNNEL.crown + TUNNEL.cover;
+        const ci = Math.floor((p.x - x0) / cell);
+        const cj = Math.floor((p.z - z0) / cell);
+        for (let j = cj - 2; j <= cj + 2; j++) {
+          for (let i = ci - 2; i <= ci + 2; i++) {
+            if (i < 0 || j < 0 || i >= n - 1 || j >= n - 1) continue;
+            const d = Math.hypot(x0 + (i + 0.5) * cell - p.x, z0 + (j + 0.5) * cell - p.z);
+            if (d > reach) continue;
+            const low = Math.min(h[j * n + i]!, h[j * n + i + 1]!, h[(j + 1) * n + i]!, h[(j + 1) * n + i + 1]!);
+            if (low < top) (holes ??= new Uint8Array(n * n))[j * n + i] = 1;
+          }
+        }
+      }
+    }
+  }
+  return holes;
 }
 
 /** Facade / roof texture tile, window axis width and storey height (m) per building style (world/atlas.ts). */
@@ -406,7 +439,20 @@ self.onmessage = (ev: MessageEvent<TileRequest | GraphMessage>) => {
     codes: t.codes,
     boxes: new Float32Array(t.buildings.flatMap((b) => [x0 + b.cx, z0 + b.cz, b.angle, b.halfLength, b.halfWidth])),
     terrain: addBoxes(
-      terrain(t.heights, t.codes, n, cell, x0, z0, t.header.ix, t.header.iy, chunks, STREAM.skirt[level] ?? 50, STREAM.step[level] ?? 1),
+      terrain(
+        t.heights,
+        t.codes,
+        n,
+        cell,
+        x0,
+        z0,
+        t.header.ix,
+        t.header.iy,
+        chunks,
+        STREAM.skirt[level] ?? 50,
+        STREAM.step[level] ?? 1,
+        level === 0 && graph ? tunnelHoles(graph, t.heights, n, cell, x0, z0) : undefined,
+      ),
       t.boxes,
       x0,
       z0,
