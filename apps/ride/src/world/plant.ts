@@ -74,7 +74,7 @@ interface Tree {
 
 type HeightAt = (x: number, z: number) => number | null;
 
-function plant(t: PlantTile, graph: RouteGraph, heightAt: HeightAt, out: Tree[]): void {
+function plant(t: PlantTile & { blocked?: (x: number, z: number) => boolean }, graph: RouteGraph, heightAt: HeightAt, out: Tree[]): void {
   const size = (t.n - 1) * t.cell;
   const x1 = t.x0 + size;
   const z1 = t.z0 + size;
@@ -133,6 +133,7 @@ function plant(t: PlantTile, graph: RouteGraph, heightAt: HeightAt, out: Tree[])
         const road = graph.nearest(x, z, 16);
         if (road && road.dist < graph.halfWidth(road.edge) + TREES.clearRoad) continue;
         if (nearHouse(x, z, TREES.clearHouse)) continue;
+        if (t.blocked?.(x, z)) continue;
         const r = hash(i, j, salt + 3);
         let kind: Kind;
         if (orchard) kind = Kind.Orchard;
@@ -177,7 +178,7 @@ function tileHeight(t: PlantTile): HeightAt {
 }
 
 /** All trees of an L0 tile as a flat list (TREE_STRIDE floats each). */
-export function plantTile(t: PlantTile, graph: RouteGraph): Float32Array {
+export function plantTile(t: PlantTile & { blocked?: (x: number, z: number) => boolean }, graph: RouteGraph): Float32Array {
   const list: Tree[] = [];
   plant(t, graph, tileHeight(t), list);
   const out = new Float32Array(list.length * TREE_STRIDE);

@@ -123,8 +123,11 @@ def landcover(areas: list[Area], te: float, tn: float, size: float, h: np.ndarra
 
 
 def build_level(level: int, box: tuple[float, float, float, float], dem: Copernicus, out_dir,
-                areas: list[Area] | None = None) -> dict[str, str]:
-    """Tiles of `level` covering `box` (LV95). Land cover from OSM `areas` if given, else guessed."""
+                areas=None, fine=None, fine_box: tuple[float, float, float, float] | None = None,
+                extra=None) -> dict[str, str]:
+    """Tiles of `level` covering `box` (LV95). Land cover from OSM `areas` (list or AreaIndex) if given, else
+    guessed. Inside `fine_box` the heights come from `fine` (the laser-scan model, a bare-earth model:
+    no canopy correction there)."""
     size = SIZES[level]
     c = cell(level)
     (out_dir / f"L{level}").mkdir(parents=True, exist_ok=True)
@@ -137,7 +140,18 @@ def build_level(level: int, box: tuple[float, float, float, float], dem: Coperni
         te, tn = ix * size, iy * size
         i = np.arange(T.N)
         E, Nn = np.meshgrid(te + i * c, tn + size - i * c)
-        stack = [dem.sample_lv95(E + du, Nn + dv) for du in offs for dv in offs]
+        inside = np.zeros(E.shape, bool)
+        if fine is not None and fine_box is not None:
+            fe0, fn0, fe1, fn1 = fine_box
+            inside = (E >= fe0) & (E <= fe1) & (Nn >= fn0) & (Nn <= fn1)
+
+        def sample(e, n):
+            h = dem.sample_lv95(e, n).astype(np.float64)
+            if inside.any():
+                h[inside] = fine.sample(e[inside], n[inside], smooth=True)
+            return h
+
+        stack = [sample(E + du, Nn + dv) for du in offs for dv in offs]
         s = np.stack(stack)
         h = 0.7 * s.max(0) + 0.3 * s.mean(0) if level == 4 else s.mean(0)
         code = landcover(areas, te, tn, size, h) if areas is not None else classify(h, c)
@@ -145,9 +159,11 @@ def build_level(level: int, box: tuple[float, float, float, float], dem: Coperni
             # Copernicus is a surface model: take the forest canopy off, or forests stand as
             # plateaus next to the bare-earth L0 tiles (soft edge, the radar sees partly through)
             forest = ndimage.uniform_filter((code == T.FOREST).astype(np.float32), 3, mode="nearest")
-            h = h - CANOPY * forest
-        name = T.write_tile(out_dir / f"L{level}", ix, iy,
-                            [(b"HGHT", T.encode_heights(h, H_SCALE)), (b"CODE", code.tobytes())],
+            h = h - CANOPY * forest * ~inside
+        sections = [(b"HGHT", T.encode_heights(h, H_SCALE)), (b"CODE", code.tobytes())]
+        if extra is not None:
+            sections += extra(ix, iy)
+        name = T.write_tile(out_dir / f"L{level}", ix, iy, sections,
                             level=level, size=size, h_scale=H_SCALE)
         files[f"{ix}_{iy}"] = name
         print(f"  L{level}/{name}  h {h.min():.0f}-{h.max():.0f} m")

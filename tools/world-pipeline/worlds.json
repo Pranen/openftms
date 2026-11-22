@@ -41,5 +41,49 @@
         1264000
       ]
     }
+  },
+  "region": {
+    "description": "M2 + M3: the whole region Feldkirch - Landquart - Walenstadt - Oberriet (17 x 23 L0 tiles), coarse levels around",
+    "box": [
+      2740000,
+      1202000,
+      2774000,
+      1248000
+    ],
+    "region": [
+      2740000,
+      1202000,
+      2774000,
+      1248000
+    ],
+    "osm": [
+      "liechtenstein",
+      "switzerland",
+      "austria"
+    ],
+    "spawn": [
+      2757850,
+      1230990
+    ],
+    "levels": {
+      "1": [
+        2740000,
+        1200000,
+        2776000,
+        1248000
+      ],
+      "2": [
+        2728000,
+        1192000,
+        2784000,
+        1256000
+      ],
+      "3": [
+        2704000,
+        1168000,
+        2800000,
+        1280000
+      ]
+    }
   }
 }

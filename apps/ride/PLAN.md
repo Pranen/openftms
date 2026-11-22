@@ -1,7 +1,8 @@
 # Ride (Arbeitstitel) – Indoor-Cycling-PWA im Rheintal
 
-**Status: M0 und M1 umgesetzt (18.11.2026): Vertical Slice Eschen/Schellenberg fahrbar mit Trainer, Simulator,
-Demo-Autopilot und Freiflug. Streaming L0–L4 aus M3 vorgezogen (19.11.2026), Ausschnitt bis Planken/Gafadura.** Nach jedem abgeschlossenen Meilenstein die Status-Spalte unten aktualisieren.
+**Status: M0–M3 umgesetzt (22.11.2026): die ganze Region Feldkirch – Landquart – Walenstadt – Oberriet fahrbar
+(6'740 km Fahrnetz), mit Gebäuden aus swissBUILDINGS3D und Fassaden-Texturen, Kulisse (Autobahn, Bahn mit Zug,
+Stromleitungen, Gewässer, Brücken) und Wahrzeichen. Offen: Messung auf echter Hardware, Navigator-HUD, M4–M7.** Nach jedem abgeschlossenen Meilenstein die Status-Spalte unten aktualisieren.
 
 Webbasierte Indoor-Cycling-App wie Zwift, aber lokal, unabhängig und im PS1-Retro-Look. Statt einer Fantasiewelt
 die echte Region Feldkirch – Landquart – Walenstadt – Oberriet (ca. 40 × 40 km). Aufrufen, Smart Trainer verbinden,
@@ -200,10 +201,13 @@ public/world/tiles/L{lvl}/{ix}_{iy}.{hash8}.bin
  Tabelle  [{id, offset, length}]
  HGHT     257² × Uint16, Delta 2. Ordnung (wie ski .sk2)              alle Stufen
  CODE     257² × Uint8: Wald, Wiese, Reben, Siedlung, Fels, Wasser, Gletscher …
- LINE     Kulissennetz als Polylinie (Int16 dm lokal) + Höhe + Breitenklasse + Brücke/Tunnel   L0, L1
- WATR     Wasserflächen mit Pegel, Flüsse als Band                    L0–L2
- BLDG     Gebäude parametrisch (Grundriss Int16 dm, Trauf-/Firsthöhe, Dachform, Farbklasse)  L0; L1 Quader
- LMRK     Wahrzeichen {assetId, Position, Drehung} → glTF in /landmarks/                     L0, L1
+ LINE     Kulisse als Polylinien: Art (Autobahn, Bahn, Strom, Fluss/Bach/Kanal), Breite, Punkte
+          (Int16 dm lokal, Höhe, Flags Brücke/Tunnel je Segment); Segment gehört der Kachel seiner Mitte   L0
+ BLDG     Gebäude parametrisch (Grundriss Int16 dm, Trauf-/Firsthöhe, Dachform im unteren, Stil im oberen
+          Halbbyte: Wohnhaus, Mehrfamilienhaus, Bauernhof, Gewerbe, Kirche, klein, offen, Gewächshaus; Farbklasse) L0
+ BLDQ     Gebäude als Quader (Mitte, Drehung, Halbmasse, Sockel, Höhe, Farbe, Stil)          L1
+ LMRK     Wahrzeichen {Stil, Mitte, Drehung, Halbmasse aus dem OSM-Grundriss, Sockel}; Modelle im Code
+          (render/landmarks.ts), die Gebäude darunter fallen weg                              L0
 ```
 
 Nicht in den Kacheln: das Fahrnetz (kommt aus `graph.bin`) und alles, was die Physik braucht.
@@ -348,8 +352,8 @@ Höhenwechseln, `crr` beim Belagswechsel, `windSpeedMps = 0`.
 |---|---|---|---|
 | M0 | Gerüst | `apps/ride` (Vite, PWA, Three.js WebGPU), `packages/sim-core`, `packages/route-graph`, `tools/world-pipeline`; Deploy-Workflow noch offen (braucht Eintrag in pwa-infrastructure) | erledigt bis auf Deploy |
 | M1 | Vertical Slice | **2 × 2 L0-Kacheln Eschen/Schellenberg** (siehe unten): Graph-Ausschnitt, Gelände 8 m mit Einschnitt, freies Fahren, Trainer-Steigung, Retro-Pass, HUD, Demo-Modus | erledigt (mit echtem Flux 2 noch nicht gefahren) |
-| M2 | Graph der Region | ganzes Fahrnetz inkl. Vorarlberg, Prüfungen (Querprofile, Steigungs-Histogramm), Navigator an Kreuzungen | offen |
-| M3 | Welt-Streaming | Pyramide L0–L4, Ringwahl, Worker, Service Worker, Gebäude, Kulisse, Gewässer, Bäume | Streaming vorgezogen und mit erweitertem Ausschnitt getestet (19.11.2026, siehe unten); Kulisse, Gewässer, swissALTI3D für L1–L3 offen |
+| M2 | Graph der Region | ganzes Fahrnetz inkl. Vorarlberg, Prüfungen (Querprofile, Steigungs-Histogramm), Navigator an Kreuzungen | erledigt (22.11.2026) bis auf Querprofile; Navigator wie in M1 (Wahl im HUD) |
+| M3 | Welt-Streaming | Pyramide L0–L4, Ringwahl, Worker, Service Worker, Gebäude, Kulisse, Gewässer, Bäume | erledigt (22.11.2026) bis auf Service Worker (offline) und Wasserflächen mit Pegel (WATR) |
 | M4 | Routen | GPX-Import mit Map-Matching, Routenwahl, Routen speichern | offen |
 | M5 | Brille | ActiveLook-HUD mit Navigation und Gesten | offen |
 | M6 | Export | FIT/TCX, Strava | offen |
@@ -471,3 +475,72 @@ Ziel: das ganze L0–L4-Streaming testen, ohne schon die ganze Region (M2) zu ba
   Plankner- und Gafadurastrasse. Tests für die Kachelwahl (`apps/ride/test/select.test.ts`).
 - **Offen:** swissALTI3D statt Copernicus für L1 (Downloads ca. 1 GB), Österreich (BEV, OSM), Gebäude als Quader
   in L1, Streaming des Graphen (heute eine Datei für den Ausschnitt), Messung auf schwächerer Hardware.
+
+### M2 + M3: Entscheide (21.11.2026)
+
+Umsetzung auf Branch `ride-m2-m3` in Etappen (je Commit, Browser-Prüfung), Weltdaten am Schluss in eigenem Commit;
+pushen, kein PR/Merge ohne Rückfrage.
+
+| Thema | Entscheid |
+|---|---|
+| Gebiet | ganze Region (Feldkirch – Landquart – Walenstadt – Oberriet), L0 aus swissALTI3D bzw. BEV in Österreich; L1/L2 im Gebiet aus denselben Daten, L3/L4 ausserhalb Copernicus |
+| Österreich | BEV-Laserscan (Code aus ski), OSM-Auszug Österreich; Gebäude dort aus OSM |
+| Gebäude CH | swissBUILDINGS3D **3.0** (GDB) – Höhen, Dachform |
+| Gebäude FL | swissBUILDINGS3D **2.0** (DXF, wie li-auto) – 3.0 enthält Liechtenstein nicht; Zuordnung nach Landesgrenze |
+| Gebäude L1 | Quader |
+| Fassaden | einfache Pixel-Texturen (aus `li-auto/src/render/textures.ts`) je Typ, Dächer mit Ziegel/Blech; ein Atlas, Nearest; affin mit Unterteilung grosser Wände, abschaltbar |
+| Kulisse | Autobahn/Trunk als Bänder mit Leitplanken (nicht befahrbar); Brückenkörper mit Pfeilern und Geländer |
+| Gewässer | Rhein als breites Band mit Pegel, Seen (Walensee), Kanäle/Bäche als Bänder |
+| Eisenbahn | statisch: Schotterbett, Schienen, Fahrleitungsmasten, Bahnübergänge, Bahnhöfe; fahrender Zug nur, wenn Zeit bleibt |
+| Stromleitungen | Hochspannungsmasten und Seile aus OSM |
+| Wahrzeichen | aus li-auto: Gutenberg, Kathedrale, Regierung, Kunstmuseum, Hilti Art, Rotes Haus, St. Laurentius, Kirche Triesenberg; jede OSM-Kirche als generische Kirche; neu: Schloss Vaduz, Schattenburg + Dom Feldkirch, Schloss Werdenberg, Schloss Sargans, Ruinen Schellenberg, Kirchhügel Bendern, Alte Rheinbrücke Vaduz–Sevelen |
+| Client | Strassen, Markierungen und Kreuzungsflächen baut der Worker pro L0-Kachel (nicht mehr alle beim Start) |
+| Pipeline | wiederaufnehmbar und parallel pro Kachel; Prüfungen (Querprofile, Steigungs-Histogramm) |
+
+### M2 + M3: Stand (22.11.2026)
+
+- **Region:** L0 E 2'740'000–2'774'000, N 1'202'000–1'248'000 (17 × 23 = 391 Kacheln), L1 108, L2 56, L3 42, L4 4.
+  Weltdaten **137 MB** unkomprimiert (L0 87, L1 23, L2 11, L3 8, Graph 8 MB). Pipeline-Lauf **61 min** (davon L0
+  21 min, OSM lesen 1.5 min, Graph 6 min, Gebäude aus dem Cache); erster Lauf mit Downloads (swissALTI3D 1.5 GB,
+  swissBUILDINGS3D 1.5 GB, BEV-Fenster, OSM Österreich 780 MB) deutlich länger.
+- **Graph:** 37'345 Knoten, 44'261 Kanten, 6'740 km, 1'893 Brücken/Tunnel. Steigungs-Histogramm (20 m) Strassen:
+  0–4 % 1'825 km, 4–8 % 362, 8–12 % 409, 12–16 % 146, 16–20 % 21, 20–25 % 1; über 25 % nur 6 kurze Stellen
+  (Liste im Build-Log). Wege: 21 km über 25 %, steilste Stelle 44.9 % (Bergweg; Grenze 40 % gilt für die geglättete
+  Kante, kurze Spitzen bleiben). Querprofile noch nicht gezeichnet.
+- **Höhenmodell blockweise:** die Region mit 2 m wären ca. 6 GB; `dem.py` lädt 2-km-Blöcke mit 64 m Rand bei Bedarf
+  (LRU), Punkte werden blockweise sortiert abgefragt. Österreich aus BEV (1 m auf 2 m gemittelt, 11 s pro Block über
+  HTTP), Rest Copernicus. L1/L2 innerhalb der Region aus diesem Modell (ohne Kronen-Abzug), ausserhalb Copernicus.
+- **OSM-Zuschnitt** in zwei Durchläufen ohne Positionsindex (Österreich brauchte sonst über 7 GB), 12 min für
+  Österreich. Zwei Graph-Schritte waren quadratisch (Knoten-Verschmelzen, Einbahn-Paare) – für die Region Stunden,
+  jetzt linear bzw. mit KD-Baum; M1 gibt byteidentisch denselben Graphen wie vorher.
+- **Gebäude:** swissBUILDINGS3D 3.0 für die Schweiz (GDB mit Multipatch/TIN; pyogrio kennt den Typ nicht, deshalb
+  `gdal_raw.py` über ctypes mit dem GDAL aus pyogrio), 2.0 für Liechtenstein (3.0 enthält es nur teilweise: um Eschen
+  672 statt 1'070 Gebäude), Grenze aus OSM; OSM-Grundrisse in Österreich und wo swissBUILDINGS3D fehlt. 65'070 + 22'010
+  Gebäude aus swissBUILDINGS3D. Stil (Wohnhaus, Mehrfamilienhaus, Bauernhof, Gewerbe, Kirche, klein, offen,
+  Gewächshaus) aus OSM-Typ, Fläche und Höhe. L1 zeigt Gebäude ab 50 m² als Quader (BLDQ) im Gelände-Viertel.
+- **Fassaden:** Pixel-Atlas 128 × 32 (16 px je Kachel, im Code gezeichnet wie in li-auto) mit Fensterachsen pro
+  Stil, Ziegel-, Blech-, Schiefer- und Kiesdach. Ganze Fensterachsen pro Wand und ganze Geschosse bis zur Traufe.
+  Affin wie die PS1 (uv·w und w perspektivisch interpoliert, dann geteilt), schaltet mit dem Vertex-Wackeln (`W`) um.
+  **Wieder abgeschaltet (22.11.2026, Rückmeldung «alle gleich, sehr unruhig»):** `BUILDING.textures = false`,
+  Häuser in Wand- und Dachfarben; Code und UVs bleiben für einen zweiten Anlauf.
+- **Kulisse (LINE):** 235 km Autobahn (Band, Randlinien, Leitplanken), 263 km Bahn (Schotter, Schienen,
+  Fahrleitungsmasten alle 55 m), 547 km Stromleitungen (Gittermasten bzw. Holzmasten, durchhängende Seile), 2'771 km
+  Gewässerlinien (Bäche und Kanäle als Band; Flüsse sind Flächen im CODE). Autobahn und Bahn werden ins Gelände
+  geschnitten, Brücken und Tunnel geradlinig zwischen den Enden. Bäume halten Abstand.
+- **Brücken:** Unterseite, Brüstung und Pfeiler (alle 32 m, wo die Fahrbahn über 2.5 m über Grund liegt) für das
+  Fahrnetz, Autobahn und Bahn.
+- **Wahrzeichen (LMRK):** nach OSM-Namen gefunden, Modelle im Code: Schloss Vaduz, Kathedrale St. Florin, Rotes Haus,
+  Burg Gutenberg, St. Laurentius Schaan, Kirche Triesenberg (Zwiebelhaube), Kunstmuseum (schwarzer Kubus), Hilti Art
+  Foundation, Schattenburg, Dom Feldkirch, Schloss Werdenberg, Schloss Sargans, Ruinen Alt- und Neu-Schellenberg,
+  Kirchhügel Bendern, Alte Rheinbrücke (gedeckte Holzbrücke). Jede Kirche aus swissBUILDINGS3D/OSM über 140 m²
+  bekommt einen Turm mit Spitzhelm (jede fünfte eine Zwiebelhaube). Das Regierungsgebäude bleibt ein normales Gebäude.
+- **Zug:** alle 45 s ein Zug mit vier roten Wagen auf der Bahnlinie nahe der Kamera (Gleisstücke der geladenen
+  Kacheln an gemeinsamen Endpunkten verkettet), 100 km/h, verschwindet am Ende der Kette.
+- **Client:** Strassen, Markierungen, Kreuzungsflächen, Kreisel und Brücken baut der Worker pro L0-Kachel (vorher
+  alle beim Start; mit 44'000 Kanten nicht mehr machbar). Start bis Menü **7.2 s** (Graph 8 MB), Autopilot fährt.
+- **Messung (eingebettete Vorschau):** um Buchs 2.06 Mio. Dreiecke, 191 Draw-Calls, 0.1–0.5 ms Renderaufruf,
+  163 MB Geometrie auf der GPU. Das Dreiecksbudget (1 Mio.) ist überschritten, vor allem durch 9 L0-Geländekacheln
+  zu 131'000 Dreiecken; auf echter Hardware messen, sonst äussere L0-Kacheln mit 16 m vermaschen.
+- **Offen:** Querprofile, Wasserflächen mit Pegel (WATR), Bahnübergänge und Bahnhöfe (OSM-Punkte sind schon
+  eingelesen), Service Worker / Offline-Region, Streaming des Graphen, Determinismus-Lauf (zweiter Lauf
+  byteidentisch) für die Region, mehr als 32 Velorouten (Bitmaske).

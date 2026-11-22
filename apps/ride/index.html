@@ -39,8 +39,10 @@
     </div>
 
     <div id="menu" class="overlay">
+      <div class="menu-row">
+      <div class="menu-main">
       <h1>RIDE</h1>
-      <p class="sub">ESCHEN · SCHELLENBERG · PLANKEN · GAFADURA</p>
+      <p class="sub">FELDKIRCH · VADUZ · LANDQUART · WALENSTADT · OBERRIET</p>
       <p id="loading" class="small">LADE WELT …</p>
       <div class="buttons">
         <button id="btn-trainer" disabled>TRAINER VERBINDEN</button>
@@ -53,6 +55,14 @@
         FLIEGEN: WASD/PFEILE · Q/E RUNTER/RAUF · SHIFT SCHNELL · MAUS ZIEHEN SCHAUEN · RAD TEMPO
       </p>
       <p id="error" class="small err"></p>
+      </div>
+      <div class="startpick">
+        <div class="lab">STARTPUNKT · KARTE ANKLICKEN</div>
+        <canvas id="startmap"></canvas>
+        <div id="start-label" class="small">START: ESCHEN</div>
+        <div id="places" class="places"></div>
+      </div>
+      </div>
       <p id="attribution" class="tiny"></p>
     </div>
 

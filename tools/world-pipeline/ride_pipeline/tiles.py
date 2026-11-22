@@ -36,6 +36,11 @@ MEADOW, FOREST, ORCHARD, SETTLEMENT, ROCK, WATER, GLACIER, FARMLAND = range(8)
 CARVE_CORE = 8.0
 CARVE_FALLOFF = 22.0
 ROAD_DROP = 0.3  # terrain this far below the road surface
+# over road tunnels the terrain stays at least this far above the road (the client draws a tube with a 5.6 m
+# crown); nodes within the tube's half width + TUNNEL_REACH of the tunnel axis, and closer to it than to an
+# open road, are raised (otherwise the carving of the approach pulls the hill down into the tube)
+TUNNEL_COVER = 8.0
+TUNNEL_REACH = 9.0
 
 
 def landcover_code(t: dict[str, str]) -> int | None:
@@ -63,12 +68,34 @@ def landcover_code(t: dict[str, str]) -> int | None:
 PRIORITY = [MEADOW, FARMLAND, SETTLEMENT, ORCHARD, FOREST, ROCK, GLACIER, WATER]
 
 
+class AreaIndex:
+    """Areas with their bounding boxes, so a tile only looks at the areas touching it (the region has
+    hundreds of thousands)."""
+
+    def __init__(self, areas: list[Area]):
+        self.areas = areas
+        bb = np.array([[min(o[:, 0].min() for o, _ in a.rings), min(o[:, 1].min() for o, _ in a.rings),
+                        max(o[:, 0].max() for o, _ in a.rings), max(o[:, 1].max() for o, _ in a.rings)]
+                       for a in areas]) if areas else np.zeros((0, 4))
+        self.bb = bb
+
+    def query(self, e0: float, n0: float, e1: float, n1: float) -> list[Area]:
+        b = self.bb
+        m = (b[:, 0] < e1) & (b[:, 2] > e0) & (b[:, 1] < n1) & (b[:, 3] > n0)
+        return [self.areas[i] for i in np.nonzero(m)[0]]
+
+
+def _near(areas, e0: float, n0: float, e1: float, n1: float) -> list[Area]:
+    return areas.query(e0, n0, e1, n1) if isinstance(areas, AreaIndex) else areas
+
+
 def _geojson(outer: np.ndarray, inners: list[np.ndarray]) -> dict:
     return {"type": "Polygon", "coordinates": [outer.tolist()] + [r.tolist() for r in inners]}
 
 
-def road_samples(graph: dict, half_width: list[float]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Points every 2 m along all edges outside bridges/tunnels: (en, height, half width)."""
+def road_samples(graph: dict, half_width: list[float], extra=None):
+    """Points every 2 m along all edges outside bridges/tunnels, plus `extra` (en, height, half width) samples
+    (motorways, railways): (en, height, half width, KD tree of en)."""
     pts, hs, ws = [], [], []
     sec_by_edge: dict[int, list[tuple[float, float]]] = {}
     for ei, s0, s1, _ in graph["sections"]:
@@ -85,16 +112,41 @@ def road_samples(graph: dict, half_width: list[float]) -> tuple[np.ndarray, np.n
         pts.append(sample_at(e.en, ss))
         hs.append(np.interp(ss, s, h))
         ws.append(np.full(len(ss), half_width[e.cls] * (G_ONEWAY_WIDTH if e.attrs & G_ATTR_ONEWAY else 1.0)))
-    return np.vstack(pts), np.concatenate(hs), np.concatenate(ws)
+    if extra is not None and len(extra[0]):
+        pts.append(extra[0])
+        hs.append(extra[1])
+        ws.append(extra[2])
+    p = np.vstack(pts)
+    return p, np.concatenate(hs), np.concatenate(ws), cKDTree(p)
 
 
-def terrain_heights(dem: Dem, smooth: np.ndarray, te: float, tn: float, roads) -> np.ndarray:
-    """Node heights of one tile (row 0 = north edge), road carved in."""
+def tunnel_samples(graph: dict, half_width: list[float]):
+    """Points every 2 m inside road tunnels of the ride network: (en, height, half width, KD tree) or None."""
+    pts, hs, ws = [], [], []
+    for ei, s0, s1, flags in graph["sections"]:
+        if not flags & 2:  # SEC_TUNNEL
+            continue
+        e = graph["edges"][ei]
+        s, h = graph["profiles"][ei]
+        ss = np.arange(s0, s1 + 1e-9, 2.0)
+        if len(ss) == 0:
+            continue
+        pts.append(sample_at(e.en, ss))
+        hs.append(np.interp(ss, s, h))
+        ws.append(np.full(len(ss), half_width[e.cls] + 1.0))
+    if not pts:
+        return None
+    p = np.vstack(pts)
+    return p, np.concatenate(hs), np.concatenate(ws), cKDTree(p)
+
+
+def terrain_heights(dem: Dem, te: float, tn: float, roads, tunnels=None) -> np.ndarray:
+    """Node heights of one tile (row 0 = north edge), road carved in, covered over tunnels.
+    roads: road_samples() plus its KD tree; tunnels: tunnel_samples()."""
     i = np.arange(N)
     E, Nn = np.meshgrid(te + i * CELL, tn + TILE - i * CELL)
-    h = dem.sample(E, Nn, smooth)
-    pts, rh, rw = roads
-    tree = cKDTree(pts)
+    h = dem.sample(E, Nn, smooth=True)
+    pts, rh, rw, tree = roads
     d, idx = tree.query(np.c_[E.ravel(), Nn.ravel()], distance_upper_bound=float(rw.max() + CARVE_FALLOFF + 1))
     ok = np.isfinite(d)
     w = np.zeros(d.shape)
@@ -108,6 +160,16 @@ def terrain_heights(dem: Dem, smooth: np.ndarray, te: float, tn: float, roads) -
         flat = h.ravel()
         flat[ok] = flat[ok] * (1 - w[ok]) + target[ok] * w[ok]
         h = flat.reshape(h.shape)
+    if tunnels is not None:
+        tp, th, tw, ttree = tunnels
+        dt, it = ttree.query(np.c_[E.ravel(), Nn.ravel()], distance_upper_bound=float(tw.max() + TUNNEL_REACH))
+        near = np.isfinite(dt)
+        near[near] &= dt[near] < tw[it[near]] + TUNNEL_REACH
+        near[near] &= dt[near] < d[near]  # d: distance to the open road (inf where none)
+        if near.any():
+            flat = h.ravel()
+            flat[near] = np.maximum(flat[near], th[it[near]] + TUNNEL_COVER)
+            h = flat.reshape(h.shape)
     return h
 
 
@@ -115,7 +177,7 @@ def landcover(areas: list[Area], te: float, tn: float, size: float = TILE, fill:
     """Land cover code per node of a tile of the given size; `fill` where no polygon lies."""
     cell = size / (N - 1)
     shapes = []
-    for a in areas:
+    for a in _near(areas, te - cell, tn - cell, te + size + cell, tn + size + cell):
         code = landcover_code(a.tags)
         if code is None or "building" in a.tags:
             continue
@@ -177,38 +239,138 @@ def building_params(t: dict[str, str], area: float, hw: float) -> tuple[float, f
     return eave, eave + roof_h, roof
 
 
-def buildings(areas: list[Area], dem: Dem, te: float, tn: float) -> bytes:
-    recs = []
-    for a in areas:
-        if "building" not in a.tags or a.tags.get("building") == "no":
-            continue
-        for outer, _ in a.rings:
-            if len(outer) < 4:
+# building styles (high nibble of the roof byte), shared with apps/ride/src/world/atlas.ts (STYLE)
+S_HOUSE, S_APARTMENT, S_FARM, S_COMMERCIAL, S_CHURCH, S_SMALL, S_OPEN, S_GREENHOUSE = range(8)
+ROOF_FORM = {"flat": 0, "gabled": 1, "hipped": 2, "skillion": 3}
+FARM = {"farm_auxiliary", "barn", "stable", "cowshed", "farm", "sty", "silo"}
+SMALL = {"garage", "garages", "shed", "carport", "hut", "cabin", "kiosk", "storage_tank", "toilets", "bunker"}
+COMMERCIAL = {"commercial", "industrial", "retail", "warehouse", "office", "school", "hospital", "supermarket",
+              "sports_hall", "public", "civic", "government", "university", "college", "kindergarten", "hotel",
+              "train_station", "fire_station", "manufacture", "service", "transportation", "parking"}
+
+
+def building_style(osm_kind: str | None, sb_kind: str | None, eave: float, area: float, flat: bool) -> int:
+    k = osm_kind or ""
+    if sb_kind in ("church", "chapel") or k in ("church", "chapel", "cathedral", "religious", "monastery"):
+        return S_CHURCH
+    if sb_kind == "greenhouse" or k == "greenhouse":
+        return S_GREENHOUSE
+    if sb_kind == "roof" or k in ("roof", "carport") and area > 60:
+        return S_OPEN
+    if k in FARM:
+        return S_FARM
+    if k in SMALL or area < 35 or eave < 3.2:
+        return S_SMALL
+    if k in COMMERCIAL or (flat and area > 500):
+        return S_COMMERCIAL
+    if k in ("apartments", "dormitory", "residential") and eave > 7 or eave > 10:
+        return S_APARTMENT
+    return S_HOUSE
+
+
+def _record(ring: np.ndarray, te: float, tn: float, dem: Dem, eave: float, ridge: float, form: int, style: int):
+    """ring: closed LV95 footprint. Returns the BLDG record or None."""
+    cx, cy, ang, hl, hw = _obb(ring)
+    x, y = ring[:, 0], ring[:, 1]
+    base = float(dem.sample(x, y).min()) - 0.3
+    pts = ring[:-1]
+    lx = np.round((pts[:, 0] - te) * 10).astype(int)
+    lz = np.round((tn + TILE - pts[:, 1]) * 10).astype(int)
+    colour = int(hashlib.sha1(f"{cx:.1f},{cy:.1f}".encode()).digest()[0]) % 8
+    return (round((cx - te) * 10), round((tn + TILE - cy) * 10), ang, hl, hw, base, eave, max(eave, ridge),
+            form | (style << 4), colour, lx, lz)
+
+
+class BuildingSource:
+    """swissBUILDINGS3D buildings (CH, FL) with OSM tags for their kind, OSM buildings where swissBUILDINGS3D has
+    none (Austria, gaps). Indexed once for the region; `tile()` gives the BLDG section of one L0 tile."""
+
+    def __init__(self, sb: list[dict], areas: list[Area]):
+        import shapely
+
+        self.sb = sb
+        self.sb_tree = shapely.STRtree([b["foot"] for b in sb]) if sb else None
+        self.sb_centre = np.array([[b["foot"].centroid.x, b["foot"].centroid.y] for b in sb]) if sb else np.zeros((0, 2))
+        osm = []
+        for a in areas:
+            if "building" not in a.tags or a.tags.get("building") == "no":
                 continue
-            c = outer[:-1].mean(axis=0)
-            if not (te <= c[0] < te + TILE and tn <= c[1] < tn + TILE):
+            for outer, _ in a.rings:
+                if len(outer) >= 4:
+                    p = shapely.Polygon(outer)
+                    if not p.is_valid:
+                        p = p.buffer(0)
+                    if not p.is_empty and p.area >= 12:
+                        osm.append((a.tags, outer, p))
+        self.osm = osm
+        self.osm_tree = shapely.STRtree([p for _, _, p in osm]) if osm else None
+        self.osm_centre = np.array([[p.centroid.x, p.centroid.y] for _, _, p in osm]) if osm else np.zeros((0, 2))
+        self.used = 0
+        self.boxes: list[tuple] = []
+
+    def tile(self, dem: Dem, te: float, tn: float, skip=None) -> bytes:
+        """skip(polygon) -> True for footprints a landmark model replaces."""
+        import shapely
+
+        recs = []
+        inside = lambda c: (c[:, 0] >= te) & (c[:, 0] < te + TILE) & (c[:, 1] >= tn) & (c[:, 1] < tn + TILE)
+        for i in np.nonzero(inside(self.sb_centre))[0]:
+            b = self.sb[i]
+            foot = b["foot"].simplify(0.3)
+            if foot.geom_type != "Polygon" or foot.area < 12 or (skip and skip(foot)):
                 continue
-            x, y = outer[:, 0], outer[:, 1]
-            area = abs(float(np.dot(x[:-1], y[1:]) - np.dot(x[1:], y[:-1]))) / 2
-            if area < 12:
+            kind = None
+            if self.osm_tree is not None:
+                for j in self.osm_tree.query(foot, predicate="intersects"):
+                    if self.osm[j][2].intersection(foot).area > 0.3 * foot.area:
+                        kind = self.osm[j][0].get("building")
+                        break
+            ring = np.asarray(foot.exterior.coords)
+            form = ROOF_FORM[b["roof"]]
+            eave, ridge = b["eave"], b["ridge"]
+            if b.get("roof_only"):  # roofs without walls in the data: heights against the terrain
+                g = float(dem.sample(ring[:, 0], ring[:, 1]).min())
+                eave, ridge = b["eave_abs"] - g, b["ridge_abs"] - g
+            eave = max(2.2, eave)
+            style = building_style(kind, b["kind"], eave, foot.area, form == 0)
+            recs.append(_record(ring, te, tn, dem, eave, ridge, form, style))
+        for j in np.nonzero(inside(self.osm_centre))[0]:
+            tags, outer, p = self.osm[j]
+            if self.sb_tree is not None and any(self.sb[i]["foot"].intersection(p).area > 0.3 * p.area
+                                                for i in self.sb_tree.query(p, predicate="intersects")):
                 continue
-            cx, cy, ang, hl, hw = _obb(outer)
-            eave, ridge, roof = building_params(a.tags, area, hw)
-            base = float(dem.sample(x, y).min()) - 0.3
-            ring = outer[:-1]
-            lx = np.round((ring[:, 0] - te) * 10).astype(int)
-            lz = np.round((tn + TILE - ring[:, 1]) * 10).astype(int)
-            colour = int(hashlib.sha1(f"{cx:.1f},{cy:.1f}".encode()).digest()[0]) % 8
-            recs.append((round((cx - te) * 10), round((tn + TILE - cy) * 10), ang, hl, hw, base, eave, ridge,
-                         roof, colour, lx, lz))
-    recs.sort(key=lambda r: (r[1], r[0]))
-    out = bytearray(struct.pack("<I", len(recs)))
-    for cx, cz, ang, hl, hw, base, eave, ridge, roof, colour, lx, lz in recs:
-        # angle measured in LV95 (E, N); the client converts to its z-south frame
-        out += struct.pack("<hhHHHHHHBBH", cx, cz, round(ang / math.pi * 65535) % 65536, min(65535, round(hl * 10)),
-                           min(65535, round(hw * 10)), max(0, min(65535, round((base - H_OFFSET) / H_SCALE))),
-                           min(65535, round(eave * 10)), min(65535, round(ridge * 10)), roof, colour, len(lx))
-        out += np.c_[lx, lz].astype("<i2").tobytes()
+            if skip and skip(p):
+                continue
+            _, _, _, _, hw = _obb(outer)
+            eave, ridge, roof = building_params(tags, p.area, hw)
+            style = building_style(tags.get("building"), None, eave, p.area, roof == 0)
+            recs.append(_record(outer, te, tn, dem, eave, ridge, roof, style))
+        recs.sort(key=lambda r: (r[1], r[0]))
+        self.used += len(recs)
+        # boxes for the coarse level L1 (absolute LV95): centre, angle, half sizes, base, top, colour, style
+        self.boxes.extend((te + cx / 10, tn + TILE - cz / 10, ang, hl, hw, base, ridge, colour, roof >> 4)
+                          for cx, cz, ang, hl, hw, base, eave, ridge, roof, colour, lx, lz in recs if hl * hw * 4 >= 50)
+        out = bytearray(struct.pack("<I", len(recs)))
+        for cx, cz, ang, hl, hw, base, eave, ridge, roof, colour, lx, lz in recs:
+            # angle measured in LV95 (E, N); the client converts to its z-south frame
+            out += struct.pack("<hhHHHHHHBBH", cx, cz, round(ang / math.pi * 65535) % 65536, min(65535, round(hl * 10)),
+                               min(65535, round(hw * 10)), max(0, min(65535, round((base - H_OFFSET) / H_SCALE))),
+                               min(65535, round(eave * 10)), min(65535, round(ridge * 10)), roof, colour, len(lx))
+            out += np.c_[lx, lz].astype("<i2").tobytes()
+        return bytes(out)
+
+
+def coarse_boxes(boxes: list[tuple], ix: int, iy: int, size: float, h_scale: float) -> bytes:
+    """BLDQ section of a coarse tile: buildings as plain boxes (x, z u16 dm from the NW corner, angle u16,
+    half length / width u16 dm, base u16 (h_scale), height u16 dm, colour u8, style u8)."""
+    te, tn = ix * size, iy * size
+    sel = [b for b in boxes if te <= b[0] < te + size and tn <= b[1] < tn + size]
+    sel.sort(key=lambda b: (round(b[1], 1), round(b[0], 1)))
+    out = bytearray(struct.pack("<I", len(sel)))
+    for e, n, ang, hl, hw, base, ridge, colour, style in sel:
+        out += struct.pack("<HHHHHHHBB", round((e - te) * 10), round((tn + size - n) * 10),
+                           round(ang / math.pi * 65535) % 65536, min(65535, round(hl * 10)), min(65535, round(hw * 10)),
+                           max(0, min(65535, round(base / h_scale))), min(65535, round(ridge * 10)), colour, style)
     return bytes(out)
 
 

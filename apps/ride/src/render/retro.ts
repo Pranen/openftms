@@ -1,6 +1,9 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn,
+  attribute,
+  varyingProperty,
+  vec2,
   cameraPosition,
   cameraProjectionMatrix,
   cameraViewMatrix,
@@ -44,6 +47,22 @@ function bayerTexture(): THREE.DataTexture {
 
 /** Screen grid for vertex snapping (in NDC units per half screen); huge = off. */
 const snapGrid = uniform(new THREE.Vector2(1e6, 1e6));
+/** 1 = affine texture mapping (PS1 swimming textures), 0 = perspective-correct; follows the snapping switch. */
+const affine = uniform(RENDER.vertexSnap > 0 ? 1 : 0);
+
+/** Clip-space position with optional earth curvature and vertex snapping (call inside an Fn). */
+function clipNode(opts: { curvature?: boolean; snap?: boolean }) {
+  const world = modelWorldMatrix.mul(vec4(positionLocal, 1)).toVar();
+  let y = world.y;
+  if (opts.curvature) {
+    const d = world.xz.sub(cameraPosition.xz).length();
+    y = y.sub(d.mul(d).mul((1 - RENDER.refraction) / (2 * RENDER.earthRadius)));
+  }
+  const clip = cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(world.x, y, world.z, 1)).toVar();
+  if (opts.snap === false) return clip;
+  const snapped = floor(clip.xy.div(clip.w).mul(snapGrid).add(0.5)).div(snapGrid).mul(clip.w);
+  return vec4(snapped, clip.z, clip.w);
+}
 
 /**
  * Flat-shaded vertex-colour material with PS1 vertex snapping (`snap: false` for long thin
@@ -59,17 +78,36 @@ export function retroMaterial(
     m.polygonOffsetFactor = -opts.polygonOffset;
     m.polygonOffsetUnits = -opts.polygonOffset;
   }
+  m.vertexNode = Fn(() => clipNode(opts))();
+  return m;
+}
+
+/**
+ * Retro material with a pixel texture from an atlas (buildings): the `tex` attribute holds (u, v, tile); u and v
+ * repeat inside the tile. Affine mapping like the PS1 (textures swim on big faces at grazing angles): the
+ * texture coordinates are interpolated as uv·w and w – the perspective-correct interpolation of both divided
+ * gives the screen-linear (affine) value. The vertex colour tints the light texture.
+ */
+export function texturedRetroMaterial(atlas: THREE.Texture, cols: number, rows: number, opts: { side?: THREE.Side } = {}): THREE.MeshLambertNodeMaterial {
+  const m = retroMaterial(opts);
+  const tex = attribute<'vec3'>('tex', 'vec3');
+  const vUvw = varyingProperty('vec3', 'vUvw');
+  const vW = varyingProperty('float', 'vW');
   m.vertexNode = Fn(() => {
-    const world = modelWorldMatrix.mul(vec4(positionLocal, 1)).toVar();
-    let y = world.y;
-    if (opts.curvature) {
-      const d = world.xz.sub(cameraPosition.xz).length();
-      y = y.sub(d.mul(d).mul((1 - RENDER.refraction) / (2 * RENDER.earthRadius)));
-    }
-    const clip = cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(world.x, y, world.z, 1)).toVar();
-    if (opts.snap === false) return clip;
-    const snapped = floor(clip.xy.div(clip.w).mul(snapGrid).add(0.5)).div(snapGrid).mul(clip.w);
-    return vec4(snapped, clip.z, clip.w);
+    const clip = clipNode({}).toVar();
+    const w = mix(float(1), clip.w, affine);
+    vUvw.assign(vec3(tex.xy.mul(w), tex.z));
+    vW.assign(w);
+    return clip;
+  })();
+  m.colorNode = Fn(() => {
+    const uv = vUvw.xy.div(vW);
+    const tile = floor(vUvw.z.add(0.5));
+    const col = tile.mod(cols);
+    const row = floor(tile.div(cols));
+    const f = uv.fract();
+    const st = vec2(col.add(f.x).div(cols), row.add(float(1).sub(f.y)).div(rows));
+    return texture(atlas, st).rgb.mul(attribute<'vec3'>('color', 'vec3'));
   })();
   return m;
 }
@@ -128,6 +166,7 @@ export class RetroRenderer {
   private applySnap(w: number, h: number): void {
     if (this.snap > 0) snapGrid.value.set((w / 2) * this.snap, (h / 2) * this.snap);
     else snapGrid.value.set(1e6, 1e6);
+    affine.value = this.snap > 0 ? 1 : 0;
   }
 
   toggleSnap(): void {

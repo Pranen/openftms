@@ -175,6 +175,91 @@ export const JUNCTION = {
   maxAngle: 2.8,
 };
 
+/**
+ * Scenery from the LINE section (render/scenery.ts): motorways, railways, bridges, power lines, waterways.
+ * Lengths in m.
+ */
+export const SCENERY = {
+  colours: {
+    asphalt: 0x5e5e64,
+    white: 0xe8e8e0,
+    rail: 0xb8bcc4,
+    ballast: 0x8a8070,
+    steel: 0x4a4440,
+    mast: 0x8a9098,
+    concrete: 0xa8a49c,
+    pier: 0x96928a,
+    tower: 0x8c949c,
+    pole: 0x6a5238,
+    cable: 0x30343a,
+    water: 0x4a7aa8,
+  },
+  motorway: { lift: 0.1, edgeInset: 0.5, line: 0.2, railLow: 0.45, railHigh: 0.8 },
+  rail: { lift: 0.15, ballast: 3.4, gauge: 1.435, railWidth: 0.12, railHeight: 0.18, mastSpacing: 55, mastOffset: 3.2, mastHeight: 7.2, wireHeight: 6 },
+  bridge: { deck: 1.4, overhang: 0.6, parapet: 1.0, pierSpacing: 32, pier: 0.9 },
+  power: { height: 34, base: 3.5, top: 0.8, arms: [24, 30], armLength: 7, armThickness: 0.5, sag: 0.04, cable: 0.35 },
+  minorPower: { height: 11, base: 0.18, top: 0.12, arms: [10], armLength: 1.2, armThickness: 0.15, sag: 0.02, cable: 0.15 },
+  water: { lift: 0.12, maxBand: 25 },
+};
+
+/** Start places on the title map (LV95; the start snaps to the nearest road). */
+export const START_PLACES: [string, number, number][] = [
+  ['Eschen', 2757829, 1230936],
+  ['Vaduz', 2757936, 1223209],
+  ['Schaan', 2756963, 1225852],
+  ['Triesenberg', 2759604, 1220695],
+  ['Steg', 2761749, 1219975],
+  ['Malbun', 2764815, 1218947],
+  ['Balzers', 2756798, 1214838],
+  ['Gafadura', 2761190, 1229413],
+  ['Feldkirch', 2763471, 1234124],
+  ['Oberriet', 2760813, 1243305],
+  ['Buchs', 2754644, 1226081],
+  ['Sargans', 2752217, 1212717],
+  ['Bad Ragaz', 2756906, 1207834],
+  ['Landquart', 2761119, 1203943],
+  ['Walenstadt', 2742142, 1220809],
+];
+
+/** Title map (ui/startmap.ts): canvas size (px), road colours by class, how far a click snaps to a road (m). */
+export const START_MAP = {
+  width: 300,
+  snap: 400,
+  /** Places start on a road of at least this class (3 = residential), clicks on the nearest way. */
+  placeClass: 3,
+  colours: { bg: '#0e1a30', path: '#3d5a46', road: '#8a94a8', main: '#e8d8a0', place: '#ffffff', start: '#ff6a3d', box: '#2a3c64' },
+};
+
+/** Road tunnels (render/roads.ts): tube profile and portal (m), colours. */
+export const TUNNEL = {
+  sidewalk: 1.0,
+  wallHeight: 3.6,
+  crown: 5.6,
+  portalSide: 11,
+  portalTop: 3,
+  portalFoot: 8,
+  /** Terrain cells over a tunnel lower than crown + cover are cut out (the portal and tube show there). */
+  cover: 1.0,
+  wall: 0x6e6c68,
+  portal: 0xa8a49c,
+  lamp: 0xfff0b0,
+};
+
+/** A train now and then on the railway near the camera (render/trains.ts). Speed m/s, times s, lengths m. */
+export const TRAIN = {
+  cars: 4,
+  car: { length: 25, width: 2.9, height: 3.9 },
+  gap: 0.8,
+  speed: 28,
+  lift: 0.3,
+  firstDelay: 8,
+  pause: 45,
+  retry: 3,
+  spawnRadius: 1500,
+  minPath: 600,
+  colours: { body: 0xd42a24, windows: 0x2a2e36, roof: 0x9a9ea6, under: 0x303030 },
+};
+
 /** Roundabout drawing (the graph has one node per roundabout, with its radius). */
 export const ROUNDABOUT = {
   lane: 7,
@@ -190,12 +275,16 @@ export const ROAD_COLOR_DEFAULT = 0x66666c;
 export const GRAVEL_COLOR = 0xa89a78;
 
 export const BUILDING = {
+  /** Pixel facade and roof textures (render/textures.ts); off: plain wall and roof colours. */
+  textures: false,
   walls: [0xe9e1cf, 0xf2efe6, 0xd9c7a3, 0xcfb894, 0xe0d6c0, 0xd8d2c4, 0xc9b79a, 0xefe6d2],
   roofs: [0x8c3b2e, 0x6e2f27, 0x5a5550, 0x7a4a32, 0x8a4434, 0x4e4a48, 0x9a5a3a, 0x6a3a2c],
   flatRoof: 0x77736c,
   overhang: 0.35,
   /** Buildings reaching further than this into a road band (m from its edge, inwards) are left out. */
   roadTolerance: 0.3,
+  /** Churches with a footprint above this (m²) get a tower (render/landmarks.ts). */
+  churchTowerArea: 140,
 };
 
 /**

@@ -196,7 +196,13 @@ class _UF:
 
 
 def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dict:
+    import time
+
     e_min, n_min, e_max, n_max = box
+    t0 = time.time()
+
+    def step(label: str) -> None:
+        print(f"  graph: {label} ({time.time() - t0:.0f} s)", flush=True)
 
     # routes: bit per relation (sorted for determinism)
     route_keys = sorted({k for ks in osm.routes.values() for k in ks})[:32]
@@ -222,6 +228,7 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
                 runs.append((w.nodes[i:j + 1], w.en[i:j + 1], w.tags, cls, wid))
             i = j + 1
 
+    step("runs cut to the box")
     runs = _drop_sidepaths(runs, osm)
 
     # 2. split at shared nodes
@@ -257,9 +264,11 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
             if min(e - e_min, e_max - e, n - n_min, n_max - n) < 30:
                 boundary.add(nodes[k])
 
+    step("split at shared nodes")
     ring_nodes = {n for ring in roundabout_nodes for n in ring}
     pieces, joins = _merge_splits(pieces, ring_nodes)
 
+    step("split one-way pairs merged")
     # 3. junction clusters: roundabouts and short connectors collapse into one node
     uf = _UF()
     for p in pieces:
@@ -313,6 +322,7 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
             inc[e.b].append(i)
         return inc
 
+    step("junction clusters")
     # 4. drop short stubs (repeat: removing one can create another)
     bset = boundary_clusters(boundary, uf)
     changed = True
@@ -328,50 +338,55 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
                 changed = True
         edges = [e for e in edges if e is not None]
 
+    step("stubs dropped")
     # 5. merge through degree-2 nodes with equal attributes
     def same(x: Edge, y: Edge) -> bool:
         return x.cls == y.cls and x.surface == y.surface and x.attrs == y.attrs
 
-    merged = True
-    while merged:
-        merged = False
-        inc = incident(edges)
-        for c in sorted(inc):
-            ids = inc[c]
-            if len(ids) != 2 or ids[0] == ids[1] or c in rb_roots:
-                continue
-            x, y = edges[ids[0]], edges[ids[1]]
-            if x is None or y is None or not same(x, y):
-                continue
-            # orient: x ends at c, y starts at c
-            if x.a == c:
-                x = _reverse(x)
-            if y.b == c:
-                y = _reverse(y)
-            if x.b != c or y.a != c or x.a == y.b == c:
-                continue
-            m = Edge(x.a, y.b, x.pieces + y.pieces, x.cls, x.surface, x.attrs, x.routes | y.routes,
-                     x.name or y.name, min(x.way, y.way))
-            edges[ids[0]] = m
-            edges[ids[1]] = None
-            edges = [e for e in edges if e is not None]
-            merged = True
-            break
+    # one pass over the nodes with the incidence lists kept up to date (restarting after every merge was
+    # quadratic: hours for the region); merging never changes the degree of another node
+    inc = incident(edges)
+    for c in sorted(inc):
+        ids = [i for i in inc[c] if edges[i] is not None]
+        if len(ids) != 2 or ids[0] == ids[1] or c in rb_roots:
+            continue
+        x, y = edges[ids[0]], edges[ids[1]]
+        if not same(x, y):
+            continue
+        # orient: x ends at c, y starts at c
+        if x.a == c:
+            x = _reverse(x)
+        if y.b == c:
+            y = _reverse(y)
+        if x.b != c or y.a != c or x.a == y.b == c:
+            continue
+        m = Edge(x.a, y.b, x.pieces + y.pieces, x.cls, x.surface, x.attrs, x.routes | y.routes,
+                 x.name or y.name, min(x.way, y.way))
+        edges[ids[0]] = m
+        edges[ids[1]] = None
+        # the far end of y now belongs to the merged edge
+        inc[y.b] = [ids[0] if i == ids[1] else i for i in inc[y.b]]
+        inc[c] = []
+    edges = [e for e in edges if e is not None]
 
+    step("degree-2 nodes merged")
     # 6a. paths and tracks steeper than anything ridable on a trainer (short shortcuts up a slope)
-    def too_steep(e: Edge) -> bool:
+    # (all paths sampled in one batch: the elevation model loads 2 km blocks lazily)
+    steep_s, steep_p, steep_e = [], [], []
+    for e in edges:
         if e.cls > 2:
-            return False
-        en = e.en
-        L = float(cumulative(en)[-1])
-        ss = np.arange(0, L + 1e-9, PROFILE_STEP)
+            continue
+        ss = np.arange(0, float(cumulative(e.en)[-1]) + 1e-9, PROFILE_STEP)
         if len(ss) < 2:
-            return False
-        p = sample_at(en, ss)
-        h = smooth_1d(dem.sample(p[:, 0], p[:, 1]), SMOOTH_WINDOW)
-        return _max_grade(ss, h) > GRADE_DROP_PATH
-    edges = [e for e in edges if not too_steep(e)]
+            continue
+        steep_e.append(id(e))
+        steep_s.append(ss)
+        steep_p.append(sample_at(e.en, ss))
+    steep = {k for k, ss, h in zip(steep_e, steep_s, dem.sample_many(steep_p))
+             if _max_grade(ss, smooth_1d(h, SMOOTH_WINDOW)) > GRADE_DROP_PATH}
+    edges = [e for e in edges if id(e) not in steep]
 
+    step("steep paths dropped")
     # 6. largest connected component
     adj = defaultdict(set)
     for e in edges:
@@ -396,18 +411,24 @@ def build(osm: OsmData, box: tuple[float, float, float, float], dem: Dem) -> dic
     edges = [e for e in edges if e.a in best]
     edges.sort(key=lambda e: (e.way, round(float(e.en[0, 0]), 1), round(float(e.en[0, 1]), 1)))
 
+    step("largest component")
     # 7. nodes, profiles
     node_ids = sorted({e.a for e in edges} | {e.b for e in edges}, key=lambda c: (round(float(cpos[c][0]), 2), round(float(cpos[c][1]), 2)))
     nidx = {c: i for i, c in enumerate(node_ids)}
     bclusters = boundary_clusters(boundary, uf)
 
     profiles, sections = [], []
-    for ei, e in enumerate(edges):
-        en = e.en
-        L = float(cumulative(en)[-1])
+    stations, points = [], []
+    for e in edges:
+        L = float(cumulative(e.en)[-1])
         s = np.r_[np.arange(0, L, PROFILE_STEP), L] if L % PROFILE_STEP > 1e-6 else np.arange(0, L + 1e-9, PROFILE_STEP)
-        pts = sample_at(en, s)
-        h = dem.sample(pts[:, 0], pts[:, 1])
+        stations.append(s)
+        points.append(sample_at(e.en, s))
+    raw_heights = dem.sample_many(points)
+    for ei, e in enumerate(edges):
+        s = stations[ei]
+        L = float(s[-1])
+        h = raw_heights[ei].copy()
         # structures: interpolate between the ends (plus a little margin onto the ground)
         acc = 0.0
         for pen, st in e.pieces:
@@ -551,23 +572,29 @@ def _merge_splits(pieces: list[Piece], ring_nodes: set[int]) -> tuple[list[Piece
     def length(p: Piece) -> float:
         return float(cumulative(p.en)[-1])
 
+    from scipy.spatial import cKDTree
+
     cand = [i for i, p in enumerate(pieces) if p.attrs & ATTR_ONEWAY and not (p.a in ring_nodes and p.b in ring_nodes)
             and length(p) <= SPLIT_MAX]
+    lens = {i: length(pieces[i]) for i in cand}
     used: set[int] = set()
     joins: list[tuple[int, int]] = []
     merged: dict[int, Piece] = {}
+    # partners start where A ends (within SPLIT_GAP): a KD tree on the start points instead of all pairs
+    starts = cKDTree(np.array([pieces[i].en[0] for i in cand])) if cand else None
     for x in cand:
         if x in used:
             continue
         A = pieces[x]
         best, best_d = None, SPLIT_GAP
-        for y in cand:
+        for k in sorted(starts.query_ball_point(A.en[-1], SPLIT_GAP)):
+            y = cand[k]
             if y == x or y in used:
                 continue
             B = pieces[y]
             if B.name != A.name or B.cls != A.cls or B.way == A.way:
                 continue
-            la, lb = length(A), length(B)
+            la, lb = lens[x], lens[y]
             if abs(la - lb) > 0.5 * max(la, lb):
                 continue
             d = max(float(np.hypot(*(A.en[0] - B.en[-1]))), float(np.hypot(*(A.en[-1] - B.en[0]))))
@@ -722,6 +749,35 @@ def stats(g: dict) -> str:
     # grade over 20 m windows (single 5 m steps are noisy at edge ends)
     gmax = max((_max_grade(s, h) for s, h in g["profiles"]), default=0.0)
     return f"{len(g['node_ids'])} nodes, {len(g['edges'])} edges, {L:.1f} km, {len(g['sections'])} structures, max grade (20 m) {gmax:.1f} %"
+
+
+def grade_report(g: dict) -> str:
+    """Steigungs-Histogramm (PLAN.md, Prüfen): km of the network per 20 m grade band, roads and paths apart;
+    asphalt steeper than 25 % is suspicious (DEM steps, walls, bridges without a section)."""
+    bands = [0, 4, 8, 12, 16, 20, 25, 1000]
+    km = {"roads": np.zeros(len(bands) - 1), "paths": np.zeros(len(bands) - 1)}
+    suspicious = []
+    for e, (s, h) in zip(g["edges"], g["profiles"]):
+        if len(s) < 2:
+            continue
+        j = np.searchsorted(s, s + 20.0)
+        ok = j < len(s)
+        gr = np.zeros(len(s))
+        gr[ok] = np.abs((h[j[ok]] - h[ok]) / np.maximum(s[j[ok]] - s[ok], 1e-6)) * 100
+        ds = np.diff(s, append=s[-1])
+        idx = np.clip(np.searchsorted(bands, gr, side="right") - 1, 0, len(bands) - 2)
+        np.add.at(km["roads" if e.cls >= 3 else "paths"], idx, ds / 1000)
+        if e.cls >= 3 and gr.max() > 25:
+            k = int(np.argmax(gr))
+            suspicious.append((float(gr.max()), e.en[0] if len(e.en) else (0, 0), float(s[k])))
+    lines = []
+    for name, v in km.items():
+        cells = " ".join(f"{bands[i]}-{bands[i + 1] if bands[i + 1] < 1000 else ''}%: {v[i]:.0f}" for i in range(len(v)))
+        lines.append(f"{name} km by 20 m grade: {cells}")
+    suspicious.sort(reverse=True)
+    lines.append(f"roads over 25 %: {len(suspicious)}" + "".join(
+        f"\n    {gr:.0f} % near E {p[0]:.0f} N {p[1]:.0f}" for gr, p, _ in suspicious[:10]))
+    return "\n  ".join(lines)
 
 
 def write(g: dict, out_dir) -> dict:
