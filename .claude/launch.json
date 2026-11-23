@@ -8,12 +8,6 @@
       "port": 5173
     },
     {
-      "name": "ride",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "ride"],
-      "port": 5174
-    },
-    {
       "name": "li-auto",
       "runtimeExecutable": "node",
       "runtimeArgs": ["../li-auto/node_modules/vite/bin/vite.js", "../li-auto", "--port", "5181", "--strictPort"],
