@@ -6,7 +6,7 @@ Zero-dependency TypeScript library for Web Bluetooth fitness devices — FTMS tr
 | Path | Content |
 |---|---|
 | `packages/open-ftms-ble` | the library (`transport/` → `protocol/` → `devices/`) |
-| `apps/demo` | Vite test harness: telemetry (left) and control (right); live at [openftms.pranen.li](https://openftms.pranen.li) |
+| `apps/demo` | Vite test harness: telemetry (left) and control (right); live at [pranen.github.io/openftms](https://pranen.github.io/openftms/) |
 | `docs` | [API](docs/api.md), [How-To: interval training](docs/howto-interval-training.md), [troubleshooting](docs/troubleshooting.md), [deployment](docs/deployment.md) (German) |
 
 ## Library at a glance

@@ -1,7 +1,7 @@
 name: Deploy Test-Harness
 
 # Baut die Test-Harness (apps/demo) und veröffentlicht sie auf GitHub Pages unter
-# openftms.pranen.li (docs/deployment.md). Deployt wird bei Änderungen an der Test-Harness,
+# pranen.github.io/openftms (docs/deployment.md). Deployt wird bei Änderungen an der Test-Harness,
 # der Bibliothek oder den Abhängigkeiten, und von Hand.
 on:
   push:
@@ -35,7 +35,8 @@ jobs:
       - run: npm ci
       # ein roter Test der Bibliothek verhindert das Deployment
       - run: npm test -w open-ftms-ble
-      - run: npm run build -w demo
+      # Pages liefert die Seite unter pranen.github.io/openftms/ aus, nicht unter /
+      - run: npm run build -w demo -- --base=/openftms/
       - uses: actions/upload-pages-artifact@v4
         with:
           path: apps/demo/dist
